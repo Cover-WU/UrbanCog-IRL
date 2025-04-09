@@ -570,7 +570,7 @@ if __name__ == '__main__':
     
     model_dir = "./model/"
     save_dir = "./product/topoMap/"
-    # user_list = [name for name in os.listdir(model_dir) if name.isdigit()]
+    user_list = [name for name in os.listdir(model_dir) if name.isdigit()]
     res_dict = dict()
     for user in user_list:
         user_int = int(user)
