@@ -145,7 +145,7 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
     print('Data with {k} rows'.format(k=dataset_uni.shape[0]))
 
     if blank:
-        built_bench = np.means(model.s_dim).reshape(1, -1)
+        built_bench = np.zeros(model.s_dim).reshape(1, -1)
         locat_bench = np.mean(dataset[:, model.s_dim:], axis=0).reshape(1, -1)
         # zero_bench = np.zeros(dataset.shape[1]).reshape(1, -1)
         # 基线意味着：建成环境取最小值，位置环境取平均值
