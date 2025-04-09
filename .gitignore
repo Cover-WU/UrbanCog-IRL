@@ -67,4 +67,10 @@ Thumbs.db
 *.sqlite
 *.db
 
+# models and products
 model/
+product/
+
+# any history and chat records
+.history/
+.specstory/
