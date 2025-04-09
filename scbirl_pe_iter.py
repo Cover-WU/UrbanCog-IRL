@@ -16,6 +16,7 @@ from dask.distributed import Client, LocalCluster
 import numpy as np
 from tqdm.auto import tqdm
 
+
 def train_model_one_traveler(who: int):
     data_dir = UserDataPart + '{:09d}/'.format(who)
     model_dir = './model/{:09d}/'.format(who)
@@ -37,12 +38,36 @@ def train_model_one_traveler(who: int):
     # SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, iter_type='prior')
 
     # NOTE: train the model before migration
-    model.train(iters=1000, loss_threshold=0.001)
+    model.train(iters=1000, loss_threshold=0.01)
+    model_repo_establishment(model, model_dir)
     model_save_path = model_dir + 'initial_model.pickle'
     model.modelSave(model_save_path)
 
     # NOTE: Compute rewards after migration
     SIRLP.afterMigrt(model, data_dir, model_dir, start_date = iter_start_date, iter_type='recent')
+
+def model_repo_establishment(model_eg: SIRLT.avril, path: str):
+    if not os.path.exists(path):
+        os.makedirs(path)
+    # create a txt file to record the model configuration
+    num_layers = model_eg.num_layers
+    num_heads = model_eg.num_heads
+    num_scales = model_eg.num_scale
+    dff_ratio = model_eg.dff_ratio
+    dropout_rate = model_eg.rate
+    
+    text = f"""
+    Model Configuration:
+    -------------------
+    Number of layers: {num_layers}
+    Number of heads: {num_heads}
+    Number of scales: {num_scales}
+    Feedforward ratio: {dff_ratio}
+    Dropout rate: {dropout_rate}
+    """
+    with open(path + 'model_config.txt', 'w') as f:
+        f.write(text)
+
 
 def train_models_parallel(who_list, n_workers=32, threads_per_worker=4):
     """
@@ -62,7 +87,7 @@ def train_models_parallel(who_list, n_workers=32, threads_per_worker=4):
     cluster = LocalCluster(
         n_workers=n_workers,
         threads_per_worker=threads_per_worker,
-        memory_limit='4GB'  # Adjust based on your server's RAM
+        memory_limit='200GB'  # Adjust based on your server's RAM
     )
     client = Client(cluster)
     print(f"Dashboard link: {client.dashboard_link}")
@@ -132,9 +157,9 @@ if __name__ =="__main__":
     '''
         Iteration Version
     '''
-    who_list = [1102234]
-    for who in who_list:
-        train_model_one_traveler(who = who)
+    # who_list = [1102234]
+    # for who in who_list:
+    #     train_model_one_traveler(who = who)
     '''
         Parallel Version
     '''
@@ -152,19 +177,19 @@ if __name__ =="__main__":
     '''
         Professional Parallel Version
     '''
-    # file_list = os.listdir(UserDataPart)
-    # # Example who_list
-    # who_list = [int(pid) for pid in file_list]
+    file_list = os.listdir(UserDataPart)
+    # Example who_list
+    who_list = [int(pid) for pid in file_list]
     
-    # # Configure Dask for your hardware
-    # n_workers = 32  # Number of CPU cores
-    # threads_per_worker = 4  # Threads per worker (128/32 = 4)
+    # Configure Dask for your hardware
+    n_workers = 32  # Number of CPU cores
+    threads_per_worker = 4  # Threads per worker (128/32 = 4)
     
-    # # Train models with batch processing
-    # results = train_model_batch(
-    #     who_list,
-    #     batch_size=n_workers  # Adjust based on memory requirements
-    # )
+    # Train models with batch processing
+    results = train_model_batch(
+        who_list,
+        batch_size=n_workers  # Adjust based on memory requirements
+    )
     
     '''
         Terminal Version
