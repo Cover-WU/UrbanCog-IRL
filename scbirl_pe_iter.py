@@ -46,15 +46,15 @@ def train_model_one_traveler(who: int):
     # NOTE: Compute rewards after migration
     SIRLP.afterMigrt(model, data_dir, model_dir, start_date = iter_start_date, iter_type='recent')
 
-def model_repo_establishment(model_eg: SIRLT.avril, path: str):
+def model_repo_establishment(model: SIRLT.avril, path: str):
     if not os.path.exists(path):
         os.makedirs(path)
     # create a txt file to record the model configuration
-    num_layers = model_eg.num_layers
-    num_heads = model_eg.num_heads
-    num_scales = model_eg.num_scale
-    dff_ratio = model_eg.dff_ratio
-    dropout_rate = model_eg.rate
+    num_layers = model.num_layers
+    num_heads = model.num_heads
+    num_scales = model.num_scale
+    dff_ratio = model.dff
+    dropout_rate = model.rate
     
     text = f"""
     Model Configuration:
@@ -157,9 +157,9 @@ if __name__ =="__main__":
     '''
         Iteration Version
     '''
-    # who_list = [1102234]
     # for who in who_list:
     #     train_model_one_traveler(who = who)
+
     '''
         Parallel Version
     '''
