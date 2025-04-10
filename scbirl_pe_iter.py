@@ -1,6 +1,6 @@
 import pickle
-import os
 import copy
+import os
 import SCBIRL_Global_PE.SCBIRLTransformer as SIRLT
 import SCBIRL_Global_PE.utils as SIRLU
 import SCBIRL_Global_PE.migrationProcess as SIRLP
@@ -23,8 +23,8 @@ def train_model_one_traveler(who: int):
     
     iter_start_date = SIRLU.load_traveler(who).iter_start_date
     # here the `iter_start_date` is a constant defined by utility module.
-    inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    print(inputs.shape, targets_action.shape, positions.shape) 
+    inputs, targets_action, positions, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    print(inputs.shape, targets_action.shape, positions.shape, pe_code.shape)
     # tabular rasa model
     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
     # model = avril_without_pe(inputs, targets_action,  state_dim, action_dim, state_only=True)
@@ -164,7 +164,6 @@ if __name__ =="__main__":
         Parallel Version
     '''
     # import multiprocessing as mp
-    # import os
     
     # MAX_CPU_COUNT = mp.cpu_count() - 2
     # done_who = []
