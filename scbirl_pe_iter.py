@@ -21,7 +21,7 @@ def train_model_one_traveler(who: int):
     inputs, targets_action, positions, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
     print(inputs.shape, targets_action.shape, positions.shape, pe_code.shape)
     # tabular rasa model
-    model = SIRLT.avril(inputs, targets_action, positions, pe_code, state_dim, action_dim, state_only=True)
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
     # model = avril_without_pe(inputs, targets_action,  state_dim, action_dim, state_only=True)
 
     # # model the model with no prior knowledge
@@ -87,4 +87,4 @@ if __name__ =="__main__":
     '''
         Terminal Version
     '''
-    train_model_one_traveler(who = 82455786)
+    train_model_one_traveler(who = 1102234)

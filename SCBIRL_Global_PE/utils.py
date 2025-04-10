@@ -237,7 +237,7 @@ def globalPE(coords, dimension,seed=43):
     for k in range(1,dimension+1):
         theta = 2 * onp.pi / 3  
         R = onp.array([[onp.cos(theta), -onp.sin(theta)], [onp.sin(theta), onp.cos(theta)]])
-        scale_factor = (200**(k/dimension))
+        scale_factor = (1000**-(k/dimension))
         angle = angle_list[k-1]
         omega_n0 = onp.array([onp.cos(angle), onp.sin(angle)]) * scale_factor
         omega_n1 = R.dot(omega_n0)

@@ -3,6 +3,7 @@ import haiku as hk
 import jax.numpy as np
 
 from .transformer import *
+from .utils import globalPE
 
 def compress_pe_code_complex(pe_code, target_dim):
     pe_code_real = np.real(pe_code)
@@ -25,15 +26,25 @@ def compress_pe_code_complex(pe_code, target_dim):
     return pe_real_compressed,pe_imag_compressed
 
 
-def encoder_model(inputs, positions, pe_code, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
+def encoder_model(inputs, positions, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
     # Combine inputs and pe code
-    pe_real_code, pe_imag_code = compress_pe_code_complex(pe_code, inputs.shape[-1])
-    inputs = inputs + pe_real_code + pe_imag_code
-
     position_dim = positions.shape[-1]
     embedding_dim = 2 * (position_dim + 1) * num_scale * num_heads
     feature_embedding_layer = hk.Linear(embedding_dim)
-    x = feature_embedding_layer(inputs)
+    inputs = feature_embedding_layer(inputs)
+    
+    # Compute global PE
+    traj_n, pair_n, state_n, coord_dim = positions.shape
+    flat_positions = positions.reshape(-1, coord_dim)
+    pe_list = []
+    for coords in flat_positions:
+        pe = globalPE(coords, embedding_dim//3)  # shape: (dimension, 3)
+        pe_list.append(pe.flatten())               # shape: (dimension * 3,) == embedding_dim
+    pe_array = np.stack(pe_list, axis=0)  # shape: (traj_n * pair_n * 2, embedding_dim)
+    pe_code = pe_array.reshape(traj_n, pair_n, state_n, embedding_dim)  # reshape back
+
+    pe_real_code,pe_imag_code = np.real(pe_code), np.imag(pe_code)
+    x = inputs + pe_real_code + pe_imag_code
     
     # Initialize transformer layer
     transformer_layers = [TransformerLayer(embedding_dim, num_heads, dff, use_rotation=True, rate=rate) 
@@ -51,15 +62,25 @@ def create_look_ahead_mask(size):
     mask = mask[np.newaxis, np.newaxis, ...]
     return mask
 
-def q_network_model(inputs, enc_output, positions, pe_code, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
+def q_network_model(inputs, enc_output, positions, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
     # combine inputs and pe code
-    pe_real_code,pe_imag_code = compress_pe_code_complex(pe_code, inputs.shape[-1])
-    inputs = inputs + pe_real_code + pe_imag_code
-
     position_dim = positions.shape[-1]
     embedding_dim = 2 * (position_dim + 1) * num_scale * num_heads
     feature_embedding_layer = hk.Linear(embedding_dim)
-    x = feature_embedding_layer(inputs)
+    inputs = feature_embedding_layer(inputs)
+    
+    # Compute global PE
+    traj_n, pair_n, state_n, coord_dim = positions.shape
+    flat_positions = positions.reshape(-1, coord_dim)
+    pe_list = []
+    for coords in flat_positions:
+        pe = globalPE(coords, embedding_dim//3)  # shape: (dimension, 3)
+        pe_list.append(pe.flatten())               # shape: (dimension * 3,) == embedding_dim
+    pe_array = np.stack(pe_list, axis=0)  # shape: (traj_n * pair_n * 2, embedding_dim)
+    pe_code = pe_array.reshape(traj_n, pair_n, state_n, embedding_dim)  # reshape back
+
+    pe_real_code,pe_imag_code = np.real(pe_code), np.imag(pe_code)
+    x = inputs + pe_real_code + pe_imag_code
     
     # Initialize transformer decoder layer
     transformer_decoder_layers = [TransformerDecoderLayer(embedding_dim, num_heads, dff, use_rotation=True, rate=rate) 

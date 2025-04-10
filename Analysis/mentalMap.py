@@ -46,14 +46,11 @@ def mentalMap(who, date):
     state_dim = len(feature_name)
     PE_features = np.array(grid_coords, dtype=np.float32)
     PE_features = np.array(PE_features)
-    GE_features = [globalPE(coord, state_dim).flatten() for coord in grid_coords]
-    GE_features = np.array(GE_features)
         
     # for loop to predict score and save the geodataframe
     BE_arrays = BE_features[:, None, None, :]
     PE_arrays = PE_features[:, None, None, :]
-    GE_arrays = GE_features[:, None, None, :]
-    reward_arrays = model.reward(BE_arrays, PE_arrays, GE_arrays)
+    reward_arrays = model.reward(BE_arrays, PE_arrays)
     reward_arrays = reward_arrays.squeeze()
     city_grid_with_reward = city_grid_with_LU.copy()
     city_grid_with_reward['reward'] = reward_arrays[:, 0]
