@@ -102,33 +102,37 @@ def processTrajectoryData(traj_chains, state_attribute, s_dim):
     """
     state_next_state = []
     action_next_action = []
+    positions_next_positions = [] 
     pe_next_pe = []
 
     for tc in traj_chains:
-        sns_chain, ana_chain, pnp_chain = [], [], []
+        sns_chain, ana_chain, ponpo_chain, pnp_chain = [], [], [], []
         for t in range(len(tc.travel_chain)):
             # Get the final destination in the travel chain
             # destination = tc.travel_chain[-1]
             # s_n_s: [2, s_dim]的数组，第一行是当前状态的特征，第二行是下一个状态的特征
             # a_n_a: [2, 1]的数组，第一行是当前动作，第二行是下一个动作，编号都是状态码
             # p_n_p: [2, nlevel*3]的数组，第一行是当前状态的grid code，第二行是下一个状态的grid code
-            s_n_s, a_n_a, p_n_p = processSingleTrajectory(tc, t, state_attribute, s_dim)
+            s_n_s, a_n_a, po_n_po, p_n_p = processSingleTrajectory(tc, t, state_attribute, s_dim)
 
             # Append the results to respective lists
             sns_chain.append(s_n_s)
             ana_chain.append(a_n_a)
+            ponpo_chain.append(po_n_po)
             pnp_chain.append(p_n_p)
         state_next_state.append(sns_chain)
         action_next_action.append(ana_chain)
+        positions_next_positions.append(ponpo_chain)
         pe_next_pe.append(pnp_chain)
     # pad sequence to the same length
     # 把traj_len填充到最大的长度，变为max_traj_len, 其余值默认为-999填充
     # todo: 考虑是否要长度对齐
     state_next_state = padSequences(state_next_state,s_n_s.shape) 
     action_next_action = padSequences(action_next_action,a_n_a.shape,padding_value=-1)
+    positions_next_positions = padSequences(positions_next_positions,po_n_po.shape)
     pe_next_pe = padSequences(pe_next_pe,p_n_p.shape)
 
-    return np.array(state_next_state), np.array(action_next_action), np.array(pe_next_pe)
+    return np.array(state_next_state), np.array(action_next_action), np.array(positions_next_positions), np.array(pe_next_pe)
 
 def processSingleTrajectory(tc, t, state_attribute, s_dim):
     '''
@@ -143,6 +147,10 @@ def processSingleTrajectory(tc, t, state_attribute, s_dim):
         s_n_s[0, :] = getStateRow(state_attribute, this_fnid)
         s_n_s[1, :] = getStateRow(state_attribute, next_fnid)
 
+        p_n_p = onp.zeros((2, 2))  # [2, 2] 表示 [当前/下一个, [lat, lon]]
+        p_n_p[0] = this_state  # this_state应该是[lat, lon]格式
+        p_n_p[1] = next_state
+        
         # note: 这一块和之前cann版本代码不同
         # get global positional encoding of state
         this_pe = globalPE(this_state,s_dim)
@@ -164,6 +172,10 @@ def processSingleTrajectory(tc, t, state_attribute, s_dim):
         # the latter position is filled with padding value
         s_n_s[1, :] = Padding
 
+        p_n_p = onp.zeros((2, 2))
+        p_n_p[0] = this_state
+        p_n_p[1] = Padding
+        
         # get grid code of state and destination,dim(8,128,128)
         this_pe = globalPE(this_state,s_dim)
         # next_pe = onp.zeros_like(this_pe)
@@ -177,7 +189,7 @@ def processSingleTrajectory(tc, t, state_attribute, s_dim):
         a_n_a[0] = -1
         a_n_a[1] = -1
 
-    return s_n_s, a_n_a, s_pe_s
+    return s_n_s, a_n_a, p_n_p, s_pe_s
 
 def padSequences(data_list, element_shape, padding_value=Padding):
     """
@@ -266,11 +278,11 @@ def loadTrajChain(user_path, type: str, start_date=None):
     full_feature_path = user_path + 'all_traj_feature.csv'
     state_attribute, s_dim = preprocessStateAttributes(full_feature_path)
     # 注意，这里建成环境做了归一化，但是位置编码是没有的
-    state_next_state, action_next_action, grid_next_grid= processTrajectoryData(chains_loaded, state_attribute, s_dim)
+    state_next_state, action_next_action,positions_next_positions, grid_next_grid= processTrajectoryData(chains_loaded, state_attribute, s_dim)
     # 这里的state_next_state是一个四维数组，第一维是轨迹条数，第二维是轨迹最大长度（即每条轨迹pair数），第三维是状态数（2），第四维是特征数
     # action_next_action是一个四维数组，第一维是轨迹条数，第二维是轨迹最大长度（即每条轨迹pair数），第三维是状态数（2），第四维是虚假轴
     # 第三个输出grid_next_grid是四维数组, dim(num_traj, max_traj_len, 2, nlevel)
-    return state_next_state, action_next_action, grid_next_grid, a_dim, s_dim
+    return state_next_state, action_next_action, positions_next_positions, grid_next_grid, a_dim, s_dim
     
 def plugInDataPair(tc, stateAttribute, model, visitedState):
     ''' 
@@ -278,7 +290,7 @@ def plugInDataPair(tc, stateAttribute, model, visitedState):
     '''
     # Preprocess trajectory data and update visited states
     # 每次迭代，高维度数组的轨迹长度都是不一样的，都是本批次（10天内）最长的长度。
-    stateNextState, actionNextAction, peNextpe = processTrajectoryData(tc, stateAttribute, model.s_dim)
+    stateNextState, actionNextAction, poNextpo,peNextpe = processTrajectoryData(tc, stateAttribute, model.s_dim)
     # 这里会更新去过的state
     for t in tc:
         visitedState.update(tuple(item) if isinstance(item, list) else item for item in t.travel_chain)
@@ -286,6 +298,7 @@ def plugInDataPair(tc, stateAttribute, model, visitedState):
     # Set model inputs for training or evaluation
     model.inputs = stateNextState
     model.targets = actionNextAction
+    model.positions = poNextpo
     model.pe_code = peNextpe
 
 

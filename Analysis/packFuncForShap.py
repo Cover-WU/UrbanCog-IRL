@@ -36,9 +36,8 @@ def loadModel(who, date = None, prior = True, accumulate = False, tabular = Fals
     model_dir = './model/' + SIRLU.toWhoString(who) + '/'
     
     iter_start_date = SIRLU.load_traveler(who).iter_start_date
-    inputs, targets_action, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    print(inputs.shape, targets_action.shape, pe_code.shape)
-    model = SIRLT.avril(inputs, targets_action, pe_code, state_dim, action_dim, state_only=True)
+    inputs, targets_action, positions, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    model = SIRLT.avril(inputs, targets_action, positions, pe_code, state_dim, action_dim, state_only=True)
     if tabular: 
         return model
     
@@ -63,27 +62,35 @@ def modelPredict(X: np.ndarray[float, float], model, standardize = False,
         The reward can be either standardize or not.
     '''
     feature_num = model.s_dim
-    assert X.shape[1] == 7 * feature_num, "The input matrix does not have the correct number of features."
+    assert X.shape[1] == 7 * feature_num + 2 , "The input matrix does not have the correct number of features."
     state = X[:, :feature_num]
     pecode_real = X[:, feature_num:4 * feature_num]
-    pecode_imag = X[:, 4 * feature_num:]
+    pecode_imag = X[:, 4 * feature_num:7 * feature_num]
     # combine pecode_real and pecode_imag into a complex matrix
     pecode = np.empty_like(pecode_real, dtype=complex)
     pecode.real = pecode_real
     pecode.imag = pecode_imag
+    
+    positions = X[:, 7*feature_num:]
     # predict the reward
     predict_function = SIRLM.getComputeFunction(model, attribute_type)
-    state = state[np.newaxis, np.newaxis, np.newaxis, :, :]
-    pecode = pecode[np.newaxis, np.newaxis, np.newaxis, :, :]
 
-    y_pred = list()
-    for row in range(len(X)):
-        # ref numpy take函数使用
-        state_current = np.take(state, indices=row, axis=-2)
-        pecode_current = np.take(pecode, indices=row, axis=-2)
-        res_val = predict_function(state_current, pecode_current)
-        # note browser
-        y_pred.append(res_val)
+    state = state[np.newaxis, :, np.newaxis, :]
+    pecode = pecode[np.newaxis, :, np.newaxis, :]
+    positions = positions[np.newaxis, :, np.newaxis, :]
+
+
+    # y_pred = list()
+    # for row in range(len(X)):
+    #     # ref numpy take函数使用
+    #     state_current = np.take(state, indices=row, axis=-2)
+    #     pecode_current = np.take(pecode, indices=row, axis=-2)
+    #     res_val = predict_function(state_current, pecode_current)
+    #     # note browser
+    #     y_pred.append(res_val)
+    
+    res_val = predict_function(state, positions,pecode)
+    y_pred = res_val[0, :, 0]
     
     y_pred = np.array(y_pred)
     if standardize:
@@ -123,12 +130,13 @@ def backgroundData(who: int, date = None):
 
         # calculate pe code vector 
         state_dim = feature_array.shape[1]        
-        # note 复用于topoMap.coords2compression
         gc_vectors = [SIRLU.globalPE(coord, state_dim) for coord in chain.travel_chain]
         gc_vectors = np.squeeze(np.array(gc_vectors), axis=-1)
         gc_array = np.concatenate((gc_vectors.real, gc_vectors.imag), axis=1)
 
-        one_chain_array = np.concatenate((feature_array, gc_array), axis=1)
+        coords = np.array(chain.travel_chain)  # (lon, lat)
+        
+        one_chain_array = np.concatenate((feature_array, gc_array, coords), axis=1)
         total_array_list.append(one_chain_array)
 
     total_array = np.vstack(total_array_list)
@@ -204,15 +212,18 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
     varchr = 'LU_Business,LU_Green,LU_Industry,LU_Public,LU_Residence,subway,density,intersections,road_density,rent'
     varname_BE = varchr.split(',')
     varname_PE = ['PE%02d' % i for i in range(6 * len(varname_BE))]
-    varname = varname_BE + varname_PE
+    varname_PO = ['PosX', 'PosY']
+    varname = varname_BE + varname_PE + varname_PO
     if binary_be_vs_loc:
         groupmap = {
-            'BuiltAttr': varname[:len(varname_BE)],
-            'Location': varname[len(varname_BE):]
+            'BuiltAttr': varname_BE,
+            'Location': varname_PE,
+            'Position': varname_PO
         }
     else:
         groupmap = {v: [v] for v in varname_BE}
         groupmap['Location'] = varname_PE
+        groupmap['Position'] = varname_PO
     shap_grouped_by_classes = grouped_shap(shap_vals=shap_values.values, features=varname, groups=groupmap)
     return shap_grouped_by_classes, dataset_freq, dataset_iden
 

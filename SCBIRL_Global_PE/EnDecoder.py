@@ -25,16 +25,22 @@ def compress_pe_code_complex(pe_code, target_dim):
     return pe_real_compressed,pe_imag_compressed
 
 
-def encoder_model(inputs, pe_code, num_layers, num_heads, dff, rate, output_dim, rng):
+def encoder_model(inputs, positions, pe_code, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
     # Combine inputs and pe code
     pe_real_code, pe_imag_code = compress_pe_code_complex(pe_code, inputs.shape[-1])
     inputs = inputs + pe_real_code + pe_imag_code
 
+    position_dim = positions.shape[-1]
+    embedding_dim = 2 * (position_dim + 1) * num_scale * num_heads
+    feature_embedding_layer = hk.Linear(embedding_dim)
+    x = feature_embedding_layer(inputs)
+    
     # Initialize transformer layer
-    transformer_layers = [TransformerLayer(inputs.shape[-1], num_heads, dff, rate) for _ in range(num_layers)]
+    transformer_layers = [TransformerLayer(embedding_dim, num_heads, dff, use_rotation=True, rate=rate) 
+                        for _ in range(num_layers)]
     # forward 
     for layer in transformer_layers:
-        inputs = layer(inputs, rng)
+        x = layer(x, positions, rng)
 
     final_layer = hk.Linear(output_dim)
     final_output = final_layer(inputs)
@@ -45,18 +51,24 @@ def create_look_ahead_mask(size):
     mask = mask[np.newaxis, np.newaxis, ...]
     return mask
 
-def q_network_model(inputs, enc_output, pe_code, num_layers, num_heads, dff, rate, output_dim, rng):
+def q_network_model(inputs, enc_output, positions, pe_code, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
     # combine inputs and pe code
     pe_real_code,pe_imag_code = compress_pe_code_complex(pe_code, inputs.shape[-1])
     inputs = inputs + pe_real_code + pe_imag_code
 
-    # Initialize transformer decoder layer
-    transformer_decoder_layers = [TransformerDecoderLayer(inputs.shape[-1], num_heads, dff, rate) for _ in range(num_layers)]
+    position_dim = positions.shape[-1]
+    embedding_dim = 2 * (position_dim + 1) * num_scale * num_heads
+    feature_embedding_layer = hk.Linear(embedding_dim)
+    x = feature_embedding_layer(inputs)
     
-    lood_ahead_mask = create_look_ahead_mask(inputs.shape[1]*inputs.shape[2])
+    # Initialize transformer decoder layer
+    transformer_decoder_layers = [TransformerDecoderLayer(embedding_dim, num_heads, dff, use_rotation=True, rate=rate) 
+                                for _ in range(num_layers)]
+    
+    look_ahead_mask = create_look_ahead_mask(inputs.shape[1]*inputs.shape[2])
     # forward function
     for layer in transformer_decoder_layers:
-        inputs = layer(inputs, enc_output, lood_ahead_mask, None, rng)
+        x = layer(x, enc_output, look_ahead_mask, None, positions, rng)
 
     final_layer = hk.Linear(output_dim)
     return final_layer(inputs)

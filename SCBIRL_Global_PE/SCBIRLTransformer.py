@@ -1,3 +1,9 @@
+if __name__ == "__main__" and __package__ is None:
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).resolve().parent.parent))
+    __package__ = "SCBIRL_Global_PE"
+    
 import haiku as hk
 
 from jax import grad, jit, value_and_grad
@@ -30,13 +36,15 @@ class avril:
         self,
         inputs: np.array,
         targets: np.array,
+        positions: np.array,
         pe_code: np.array,
         state_dim: int,
         action_dim: int,
         state_only: bool = True,
-        num_layers: int = 2,
-        num_heads: int = 1,
-        dff = 28,
+        num_layers: int = 3,
+        num_heads: int = 2,
+        num_scale: int = 32,
+        dff = 2,
         rate = 0.1,
         seed: int = 41310,
     ):
@@ -48,6 +56,8 @@ class avril:
             State training data of size [num_traj x npair_per_traj x 2 x state_dimension]
         targets: np.array
             Action training data of size [num_traj x npair_per_traj x 2 x 1]
+        positions: np.array
+            Grid code data of size [num_traj x npair_per_traj x 2 x 2]
         pe_code: np.array
             Grid code data of size [num_traj x npair_per_traj x 2 x position_embedding_dim]
         state_dim: int
@@ -69,6 +79,7 @@ class avril:
         self.inputs = inputs
         self.targets = targets
         self.pe_code = pe_code
+        self.positions = positions
         self.s_dim = state_dim
         self.a_dim = action_dim
         self.state_only = state_only
@@ -76,16 +87,18 @@ class avril:
 
         self.num_layers = num_layers
         self.num_heads = num_heads
+        self.num_scale = num_scale
         self.dff = dff 
         self.rate = rate
 
         self.e_params = self.encoder.init(
-            self.key, inputs, pe_code, num_layers, num_heads,dff, rate, self.encoder_o_dim, self.key
+            self.key, 
+            inputs, positions, pe_code, num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
         )
 
         enc_output = random.normal(self.key, inputs.shape[:-1] + (2,))
         self.q_params = self.q_network.init(
-            self.key, inputs, enc_output, pe_code, num_layers, num_heads, dff, rate, action_dim, self.key
+            self.key, inputs, positions, enc_output, pe_code, num_layers, num_heads, num_scale, dff, rate, action_dim, self.key
         )
 
         self.c_params = self.compress_pe_code_complex.init(
@@ -113,15 +126,17 @@ class avril:
             self.q_params = self.params[1]
             self.c_params = self.params[2]
 
-    def reward(self,state,pe_code):
+    def reward(self,state,positions,pe_code):
         #  Returns reward function parameters for a given state
         r_par = self.encoder.apply(
                 self.e_params,
                 self.key,
                 state,
+                positions,
                 pe_code,
                 self.num_layers,
                 self.num_heads,
+                self.num_scale,
                 self.dff,
                 self.rate,
                 self.encoder_o_dim,
@@ -130,14 +145,16 @@ class avril:
         r_par = np.squeeze(r_par,axis = 2)
         return r_par
     
-    def QValue(self,state,pe_code):
+    def QValue(self,state,positions,pe_code):
         enc_output = self.encoder.apply(
                 self.e_params,
                 self.key,
                 state,
+                positions,
                 pe_code,
                 self.num_layers,
                 self.num_heads,
+                self.num_scale,
                 self.dff,
                 self.rate,
                 self.encoder_o_dim,
@@ -149,9 +166,11 @@ class avril:
             self.key,
             state,
             enc_output,
+            positions,
             pe_code,
             self.num_layers,
             self.num_heads,
+            self.num_scale,
             self.dff,
             self.rate,
             self.a_dim,
@@ -160,7 +179,7 @@ class avril:
         q_values = np.squeeze(q_values,axis=2)
         return q_values
 
-    def elbo(self, params, key, inputs, targets, pe_code, weights = None):
+    def elbo(self, params, key, inputs, targets, positions, pe_code, weights = None):
         """
         Method for calculating ELBO
 
@@ -190,9 +209,11 @@ class avril:
                 encoder_params,
                 key,
                 inputs[:, :, state_dim, np.newaxis, :],
+                positions[:, :, state_dim, np.newaxis, :],
                 pe_code[:, :, state_dim, np.newaxis, :],
                 self.num_layers,
                 self.num_heads,
+                self.num_scale,
                 self.dff,
                 self.rate,
                 self.encoder_o_dim,
@@ -220,9 +241,11 @@ class avril:
             key,
             inputs[:, :, 0, np.newaxis, :],
             enc_output,
+            positions[:, :, 0, np.newaxis, :],
             pe_code[:, :, 0, np.newaxis, :],
             self.num_layers,
             self.num_heads,
+            self.num_scale,
             self.dff,
             self.rate,
             self.a_dim,
@@ -240,9 +263,11 @@ class avril:
             key,
             inputs[:, :, 1, np.newaxis, :],
             enc_output1,
+            positions[:, :, 1, np.newaxis, :],
             pe_code[:, :, 1, np.newaxis, :],
             self.num_layers,
             self.num_heads,
+            self.num_scale,
             self.dff,
             self.rate,
             self.a_dim,
@@ -312,6 +337,7 @@ class avril:
 
         inputs = self.inputs
         targets = self.targets
+        positions = self.positions
         pe_code = self.pe_code
         if weights is not None:
             weights_array = np.array(weights)
@@ -349,7 +375,7 @@ class avril:
             if weights is not None:
                 weights = weights_array[indexs]
 
-            lik, g_params = loss_grad(params, key, inputs[indexs], targets[indexs], pe_code[indexs], weights = weights)
+            lik, g_params = loss_grad(params, key, inputs[indexs], targets[indexs], positions[indexs], pe_code[indexs], weights = weights)
 
             loss_diff = abs(lik-lik_pre)
             print(lik-lik_pre, lik)
@@ -366,3 +392,38 @@ class avril:
         self.q_params = params[1]
         self.c_params = params[2]
         self.params = params
+        
+if __name__ == "__main__":
+    # 参数设置
+    num_traj = 4
+    pairs_per_traj = 3
+    state_dim = 5
+    action_dim = 10
+    pe_dim = 16
+
+    # 模拟数据构造
+    inputs = onp.random.rand(num_traj, pairs_per_traj, 2, state_dim).astype(onp.float32)
+    targets = onp.random.randint(0, action_dim, size=(num_traj, pairs_per_traj, 2, 1)).astype(onp.float32)
+
+    # 位置信息（坐标），用于位置编码
+    positions = onp.random.rand(num_traj, pairs_per_traj, 2, 2).astype(onp.float32)
+
+    # 用 globalPE 对每个位置生成编码
+    pe_code = onp.zeros((num_traj, pairs_per_traj, 2, pe_dim*3), dtype=onp.complex64)
+    for i in range(num_traj):
+        for j in range(pairs_per_traj):
+            for k in range(2):
+                pe_code[i, j, k] = globalPE(positions[i, j, k], pe_dim).squeeze()
+
+    # 实例化模型
+    model = avril(
+        inputs=np.array(inputs),
+        targets=np.array(targets),
+        pe_code=np.array(pe_code),
+        positions=np.array(positions),
+        state_dim=state_dim,
+        action_dim=action_dim,
+    )
+
+    # 开始训练（小步快速试验）
+    model.train(iters=5, batch_size=2, l_rate=1e-3)
