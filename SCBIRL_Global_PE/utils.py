@@ -230,7 +230,7 @@ def globalPE(coords, dimension,seed=43):
     A complex matrix of shape (dimension, 3) is returned.
     '''
     x,y = coords
-    Q = np.load('./data_pe/Q_matrix.npy')
+    Q = np.load('./data/Q_matrix.npy')
     onp.random.seed(seed)
     angle_list = onp.random.uniform(0, 2 * onp.pi, dimension) 
 
