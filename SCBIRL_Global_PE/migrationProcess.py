@@ -19,11 +19,13 @@ def getComputeFunction(model, attribute_type):
     The fed grid code should be complex array.
     """
     if attribute_type == 'value':
-        return lambda state, position: np.max(model.QValue(state, position))
+        return lambda state,positions,grid_code: np.max(model.QValue(state, positions, grid_code))
     elif attribute_type == 'transition_prob':
-        return lambda state, position: softmax(model.QValue(state, position)[0][0])
+        return lambda state,positions,grid_code: softmax(model.QValue(state, positions, grid_code)[0][0])
     elif attribute_type == 'reward':
-        return lambda state, position: model.reward(state, position)
+        return lambda state,positions,grid_code: model.reward(state, positions, grid_code)
+    elif attribute_type == 'reward_single':
+        return lambda state,positions,grid_code: model.reward(state, positions, grid_code)[0][0][0]
     else:
         raise ValueError("attribute_type should be either 'value', 'reward', or 'transition_prob'.")
 
@@ -97,14 +99,14 @@ def afterMigrt(model, dataPath, outputPath, start_date, iter_type):
     modelDir = outputPath + folder_name
     if not os.path.exists(modelDir):
         os.makedirs(modelDir)
-    memory_buffer = 10 - 1 # days
+    memory_buffer = 10 - 1 # ? cov: 应该是9吧，后面还有加一个日期，如果是10的话最后会有11天作为训练。问题不大，只是个数量问题。
 
     for i in range(len(trajIterChains)):
 
         if i < memory_buffer:
-            iter_training_set = trajInitChains[-(memory_buffer-i) :] + trajIterChains[: i]
+            iter_training_set = trajInitChains[-(memory_buffer-i):] + trajIterChains[:i]
         else:
-            iter_training_set = trajIterChains[i-memory_buffer : i]
+            iter_training_set = trajIterChains[i-memory_buffer:i]
         iter_training_set = iter_training_set + [trajIterChains[i]]
 
         # Process and calculate reward values after migration.

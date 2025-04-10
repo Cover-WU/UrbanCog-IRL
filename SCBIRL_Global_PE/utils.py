@@ -1,16 +1,15 @@
 import jax.numpy as np
 import numpy as onp
 import pandas as pd
+import pyproj
+from scipy.linalg import qr
+from sklearn.preprocessing import MinMaxScaler
+
 import json
 import pickle
 import os
-import pyproj
-
-
-from scipy.linalg import qr
 from collections import namedtuple
 from datetime import date, timedelta, datetime
-from sklearn.preprocessing import MinMaxScaler
 from typing import List
 from SCBIRL_Global_PE import SCBIRLTransformer as SIRLT
 
@@ -168,38 +167,42 @@ def processTrajectoryData(traj_chains, state_attribute, s_dim):
         tuple: A tuple containing three arrays:
             - state_next_state (ndarray): Array of shape (num_chains, max_traj_len, 2, s_dim) representing the current and next states.
             - action_next_action (ndarray): Array of shape (num_chains, max_traj_len, 2, 1) representing the current and next actions.
-            - positions_next_positions (ndarray): Array of shape (num_chains, max_traj_len, 2, 2) representing the current and next coordinates.
+            - pe_next_pe (ndarray): Array of shape (num_chains, max_traj_len, 2, nlevel*3) representing the current and next grid codes.
 
     """
     state_next_state = []
     action_next_action = []
     positions_next_positions = [] 
+    pe_next_pe = []
 
     for tc in traj_chains:
-        sns_chain, ana_chain, pnp_chain = [], [], []
+        sns_chain, ana_chain, ponpo_chain, pnp_chain = [], [], [], []
         for t in range(len(tc.travel_chain)):
             # Get the final destination in the travel chain
             # destination = tc.travel_chain[-1]
             # s_n_s: [2, s_dim]的数组，第一行是当前状态的特征，第二行是下一个状态的特征
             # a_n_a: [2, 1]的数组，第一行是当前动作，第二行是下一个动作，编号都是状态码
             # p_n_p: [2, nlevel*3]的数组，第一行是当前状态的grid code，第二行是下一个状态的grid code
-            s_n_s, a_n_a, p_n_p = processSingleTrajectory(tc, t, state_attribute, s_dim)
+            s_n_s, a_n_a, po_n_po, p_n_p = processSingleTrajectory(tc, t, state_attribute, s_dim)
 
             # Append the results to respective lists
             sns_chain.append(s_n_s)
             ana_chain.append(a_n_a)
+            ponpo_chain.append(po_n_po)
             pnp_chain.append(p_n_p)
         state_next_state.append(sns_chain)
         action_next_action.append(ana_chain)
-        positions_next_positions.append(pnp_chain)
+        positions_next_positions.append(ponpo_chain)
+        pe_next_pe.append(pnp_chain)
     # pad sequence to the same length
     # 把traj_len填充到最大的长度，变为max_traj_len, 其余值默认为-999填充
     # todo: 考虑是否要长度对齐
     state_next_state = padSequences(state_next_state,s_n_s.shape) 
     action_next_action = padSequences(action_next_action,a_n_a.shape,padding_value=-1)
-    positions_next_positions = padSequences(positions_next_positions,p_n_p.shape)
+    positions_next_positions = padSequences(positions_next_positions,po_n_po.shape)
+    pe_next_pe = padSequences(pe_next_pe,p_n_p.shape)
 
-    return np.array(state_next_state), np.array(action_next_action), np.array(positions_next_positions)
+    return np.array(state_next_state), np.array(action_next_action), np.array(positions_next_positions), np.array(pe_next_pe)
 
 def processSingleTrajectory(tc, t, state_attribute, s_dim):
     '''
@@ -207,40 +210,57 @@ def processSingleTrajectory(tc, t, state_attribute, s_dim):
     in order to form the TD training array.
     '''
     if t < len(tc.travel_chain)-1:
-        this_coord, next_coord = tc.travel_chain[t], tc.travel_chain[t + 1]
+        this_state, next_state = tc.travel_chain[t], tc.travel_chain[t + 1]
         this_fnid, next_fnid = tc.fnid_chain[t], tc.fnid_chain[t+1]
         # state attribute
         s_n_s = onp.zeros((2, s_dim))
         s_n_s[0, :] = getStateRow(state_attribute, this_fnid)
         s_n_s[1, :] = getStateRow(state_attribute, next_fnid)
 
-        # 位置信息：直接使用经纬度
+        # ? cov: really? 这里应该是[lon, lat]吧
         p_n_p = onp.zeros((2, 2))  # [2, 2] 表示 [当前/下一个, [lat, lon]]
-        p_n_p[0] = this_coord  # this_state应该是[lat, lon]格式
-        p_n_p[1] = next_coord
+        p_n_p[0] = this_state  # this_state应该是[lat, lon]格式
+        p_n_p[1] = next_state
+        
+        # note: 这一块和之前cann版本代码不同
+        # get global positional encoding of state
+        this_pe = globalPE(this_state,s_dim)
+        next_pe = globalPE(next_state,s_dim)
+        # save to s_grid_s
+        s_pe_s = onp.empty((2, s_dim*3), dtype=onp.complex_) # Each dimensional grid encoding has three component
+        s_pe_s[0, :] = this_pe.flatten()
+        s_pe_s[1, :] = next_pe.flatten()
 
         # action
         a_n_a = onp.zeros((2, 1))   
         a_n_a[0] = tc.id_chain[t + 1]
         a_n_a[1] = tc.id_chain[t + 2] if t + 2 < len(tc.id_chain) else -1
     else:
-        # 处理序列末尾
-        this_fnid = tc.fnid_chain[t]
-        this_coord = tc.travel_chain[t]
+        this_state, next_state = tc.travel_chain[t], None
+        this_fnid, next_fnid = tc.fnid_chain[t], None
         s_n_s = onp.zeros((2, s_dim))
         s_n_s[0, :] = getStateRow(state_attribute, this_fnid)
         # the latter position is filled with padding value
         s_n_s[1, :] = Padding
 
         p_n_p = onp.zeros((2, 2))
-        p_n_p[0] = this_coord
+        p_n_p[0] = this_state
         p_n_p[1] = Padding
-
+        
+        # get grid code of state and destination,dim(8,128,128)
+        this_pe = globalPE(this_state,s_dim)
+        # next_pe = onp.zeros_like(this_pe)
+        # save to s_grid_s
+        s_pe_s = onp.empty((2, s_dim*3), dtype=onp.complex_)
+        s_pe_s[0, :] = this_pe.flatten()
+        # s_pe_s[1, :] = next_pe.flatten()
+        s_pe_s[1, :] = Padding
+        
         a_n_a = onp.zeros((2, 1))
         a_n_a[0] = -1
         a_n_a[1] = -1
 
-    return s_n_s, a_n_a, p_n_p
+    return s_n_s, a_n_a, p_n_p, s_pe_s
 
 def padSequences(data_list, element_shape, padding_value=Padding):
     """
@@ -275,6 +295,39 @@ def padSequences(data_list, element_shape, padding_value=Padding):
     # Convert the list of lists of numpy arrays to a higher-dimensional numpy array
     return onp.array(padded_data_list)
 
+def globalPE(coords, dimension,seed=43):
+    '''
+    Calculate positional encoding from coordinates:
+    A complex matrix of shape (dimension, 3) is returned.
+    '''
+    x,y = coords
+    Q = np.load('./data/Q_matrix.npy')
+    onp.random.seed(seed)
+    angle_list = onp.random.uniform(0, 2 * onp.pi, dimension) 
+
+    for k in range(1,dimension+1):
+        theta = 2 * onp.pi / 3  
+        R = onp.array([[onp.cos(theta), -onp.sin(theta)], [onp.sin(theta), onp.cos(theta)]])
+        scale_factor = (1000**-(k/dimension))
+        angle = angle_list[k-1]
+        omega_n0 = onp.array([onp.cos(angle), onp.sin(angle)]) * scale_factor
+        omega_n1 = R.dot(omega_n0)
+        omega_n2 = R.dot(omega_n1)
+
+        coords = onp.vstack((x, y))
+        eiw0x = onp.exp(1j * onp.dot(omega_n0,coords))
+        eiw1x = onp.exp(1j * onp.dot(omega_n1,coords))
+        eiw2x = onp.exp(1j * onp.dot(omega_n2,coords))
+
+        g_n = Q.dot(onp.array([eiw0x, eiw1x, eiw2x]))
+        if k == 1:
+            g = g_n
+        else:
+            g = onp.concatenate((g, g_n), axis=0)
+    return g
+
+
+
 def loadTrajChain(user_path, type: str, start_date=None):
     '''
     return the training data.
@@ -296,12 +349,11 @@ def loadTrajChain(user_path, type: str, start_date=None):
     full_feature_path = user_path + 'all_traj_feature.csv'
     state_attribute, s_dim = preprocessStateAttributes(full_feature_path)
     # 注意，这里建成环境做了归一化，但是位置编码是没有的
-    state_next_state, action_next_action, positions_next_positions = processTrajectoryData(chains_loaded, state_attribute, s_dim)
+    state_next_state, action_next_action,positions_next_positions, grid_next_grid= processTrajectoryData(chains_loaded, state_attribute, s_dim)
     # 这里的state_next_state是一个四维数组，第一维是轨迹条数，第二维是轨迹最大长度（即每条轨迹pair数），第三维是状态数（2），第四维是特征数
     # action_next_action是一个四维数组，第一维是轨迹条数，第二维是轨迹最大长度（即每条轨迹pair数），第三维是状态数（2），第四维是虚假轴
     # 第三个输出grid_next_grid是四维数组, dim(num_traj, max_traj_len, 2, nlevel)
-    positions_next_positions = coords2UTMmeters(positions_next_positions)
-    return state_next_state, action_next_action, positions_next_positions, a_dim, s_dim
+    return state_next_state, action_next_action, positions_next_positions, grid_next_grid, a_dim, s_dim
     
 def plugInDataPair(tc, stateAttribute, model, visitedState):
     ''' 
@@ -309,7 +361,7 @@ def plugInDataPair(tc, stateAttribute, model, visitedState):
     '''
     # Preprocess trajectory data and update visited states
     # 每次迭代，高维度数组的轨迹长度都是不一样的，都是本批次（10天内）最长的长度。
-    stateNextState, actionNextAction, peNextpe = processTrajectoryData(tc, stateAttribute, model.s_dim)
+    stateNextState, actionNextAction, poNextpo, peNextpe = processTrajectoryData(tc, stateAttribute, model.s_dim)
     # 这里会更新去过的state
     for t in tc:
         visitedState.update(tuple(item) if isinstance(item, list) else item for item in t.travel_chain)
@@ -317,7 +369,8 @@ def plugInDataPair(tc, stateAttribute, model, visitedState):
     # Set model inputs for training or evaluation
     model.inputs = stateNextState
     model.targets = actionNextAction
-    model.positions = peNextpe
+    model.positions = poNextpo
+    model.pe_code = peNextpe
 
 
 def toWhoString(who: int, digits=9):
@@ -443,7 +496,7 @@ def extract_week_ends(date_seq: List[int]):
     '''
     given a list of dates, return the week end dates and week code.
     '''
-    date_seq = sorted(set(date_seq))
+    date_seq.sort()
     assert all(date_seq[i] < date_seq[i + 1] for i in range(len(date_seq) - 1)), \
         "The date sequence must be strictly increasing and unique."
         

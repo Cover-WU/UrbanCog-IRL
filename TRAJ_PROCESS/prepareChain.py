@@ -124,7 +124,6 @@ def featureset2allFeature(data):
     return res.reset_index(drop = True)
 
 
-
 def createCoordsMapping(data):
     coords_series = data.apply(lambda row: (row['longitude'], row['latitude']), axis=1)
     # concatenate the two Series

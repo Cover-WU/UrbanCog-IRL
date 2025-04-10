@@ -42,6 +42,7 @@ def mentalMap(who, date):
     # compute the grid centroid and convert it to grid code
     grid_locations = city_grid_with_LU.geometry.centroid
     grid_coords = [(cent.x, cent.y) for cent in grid_locations]
+    state_dim = len(feature_name)
     PE_features = np.array(grid_coords, dtype=np.float32)
     PE_features = np.array(PE_features)
         
@@ -50,8 +51,6 @@ def mentalMap(who, date):
     PE_arrays = PE_features[:, None, None, :]
     reward_arrays = model.reward(BE_arrays, PE_arrays)
     reward_arrays = reward_arrays.squeeze()
-    
-    normalized_reward = (reward_arrays[:, 0] - reward_arrays[:, 0].min()) / (reward_arrays[:, 0].max() - reward_arrays[:, 0].min())
     city_grid_with_reward = city_grid_with_LU.copy()
-    city_grid_with_reward['reward'] = normalized_reward
+    city_grid_with_reward['reward'] = reward_arrays[:, 0]
     return city_grid_with_reward
