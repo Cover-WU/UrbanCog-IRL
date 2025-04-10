@@ -62,7 +62,7 @@ Thumbs.db
 
 # Anaconda / Jupyter specific
 *.egg-info/
-*.ipynb
+# *.ipynb
 .envrc
 *.sqlite
 *.db
