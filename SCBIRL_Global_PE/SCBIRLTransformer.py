@@ -4,18 +4,24 @@ if __name__ == "__main__" and __package__ is None:
     sys.path.append(str(Path(__file__).resolve().parent.parent))
     __package__ = "SCBIRL_Global_PE"
     
-import pickle
-import numpy as onp
-
 import haiku as hk
+
+from jax import grad, jit, value_and_grad
+from jax import random
+from jax.example_libraries import optimizers
 import jax
 import jax.numpy as np
-from jax import jit, value_and_grad, random
-from jax.example_libraries import optimizers
-from tqdm import tqdm
+from jax import random
 
-from .EnDecoder import *
+import numpy as onp
+import pickle
+import os
+import pandas as pd
+from tqdm import tqdm
+from sklearn.preprocessing import MinMaxScaler
+
 from .transformer import *
+from .EnDecoder import *
 from .utils import *
 from .migrationProcess import *
 
@@ -34,10 +40,10 @@ class avril:
         state_dim: int,
         action_dim: int,
         state_only: bool = True,
-        num_layers: int = 3,
-        num_heads: int = 2,
-        num_scale: int = 32,
-        dff_ratio: int = 2,
+        num_layers: int = 2,
+        num_heads: int = 1,
+        num_scale: int = 8,
+        dff = 2,
         rate = 0.1,
         seed: int = 41310,
     ):
@@ -50,7 +56,7 @@ class avril:
         targets: np.array
             Action training data of size [num_traj x npair_per_traj x 2 x 1]
         positions: np.array
-            Grid code data of size [num_traj x npair_per_traj x 2 x position_dim]
+            Grid code data of size [num_traj x npair_per_traj x 2 x 2]
         state_dim: int
             Dimension of state space
         action_dim: int
@@ -65,6 +71,7 @@ class avril:
 
         self.encoder = hk.transform(encoder_model)
         self.q_network = hk.transform(q_network_model)
+        self.compress_pe_code_complex = hk.transform(compress_pe_code_complex)
 
         self.inputs = inputs
         self.targets = targets
@@ -77,18 +84,17 @@ class avril:
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.num_scale = num_scale
-        self.dff_ratio = dff_ratio
+        self.dff = dff 
         self.rate = rate
 
         self.e_params = self.encoder.init(
             self.key, 
-            inputs, positions, num_layers, num_heads, num_scale, dff_ratio, rate, self.encoder_o_dim, self.key
+            inputs, positions, num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
         )
 
         enc_output = random.normal(self.key, inputs.shape[:-1] + (2,))
         self.q_params = self.q_network.init(
-            self.key, 
-            inputs, positions, enc_output, num_layers, num_heads, num_scale, dff_ratio, rate, action_dim, self.key
+            self.key, inputs, positions, enc_output, num_layers, num_heads, num_scale, dff, rate, action_dim, self.key
         )
 
         self.params = (self.e_params, self.q_params)
@@ -112,16 +118,16 @@ class avril:
             self.q_params = self.params[1]
 
     def reward(self,state,positions):
-        #  Returns reward function parameters for a given state
+        #  Returns reward function parameters for a given state
         r_par = self.encoder.apply(
                 self.e_params,
                 self.key,
                 state,
                 positions,
                 self.num_layers,
-                self.num_heads, 
+                self.num_heads,
                 self.num_scale,
-                self.dff_ratio,
+                self.dff,
                 self.rate,
                 self.encoder_o_dim,
                 self.key
@@ -129,7 +135,7 @@ class avril:
         r_par = np.squeeze(r_par,axis = 2)
         return r_par
     
-    def QValue(self,state, positions):
+    def QValue(self, state, positions):
         enc_output = self.encoder.apply(
                 self.e_params,
                 self.key,
@@ -138,7 +144,7 @@ class avril:
                 self.num_layers,
                 self.num_heads,
                 self.num_scale,
-                self.dff_ratio,
+                self.dff,
                 self.rate,
                 self.encoder_o_dim,
                 self.key
@@ -148,12 +154,12 @@ class avril:
             self.q_params,
             self.key,
             state,
-            positions,
             enc_output,
+            positions,
             self.num_layers,
             self.num_heads,
             self.num_scale,
-            self.dff_ratio,
+            self.dff,
             self.rate,
             self.a_dim,
             self.key
@@ -195,7 +201,7 @@ class avril:
                 self.num_layers,
                 self.num_heads,
                 self.num_scale,
-                self.dff_ratio,
+                self.dff,
                 self.rate,
                 self.encoder_o_dim,
                 self.key
@@ -226,7 +232,7 @@ class avril:
             self.num_layers,
             self.num_heads,
             self.num_scale,
-            self.dff_ratio,
+            self.dff,
             self.rate,
             self.a_dim,
             self.key
@@ -247,7 +253,7 @@ class avril:
             self.num_layers,
             self.num_heads,
             self.num_scale,
-            self.dff_ratio,
+            self.dff,
             self.rate,
             self.a_dim,
             self.key
@@ -269,7 +275,7 @@ class avril:
 
         if self.load_params:
             # 有先验迭代
-            e_params_pre, _ = self.pre_params
+            e_params_pre, _, _ = self.pre_params
             means_pre, log_sds_pre , _ = getRewardParameters(e_params_pre, 0)
             kl = kl_divergence(means, np.exp(log_sds), means_pre, np.exp(log_sds_pre))
         else:
@@ -369,40 +375,3 @@ class avril:
         self.e_params = params[0]
         self.q_params = params[1]
         self.params = params
-
-if __name__ == "__main__":
-    # 模拟超参数
-    num_traj = 10
-    npair_per_traj = 5
-    state_dim = 10
-    action_dim = 3
-    position_dim = 2
-
-    # 构造假数据（随机）
-    inputs = onp.random.randn(num_traj, npair_per_traj, 2, state_dim).astype(onp.float32)
-    targets = onp.random.randint(0, action_dim, size=(num_traj, npair_per_traj, 2, 1)).astype(onp.float32)
-    positions = onp.random.randn(num_traj, npair_per_traj, 2, position_dim).astype(onp.float32)
-
-    # 转为 JAX 数组
-    inputs = np.array(inputs)
-    targets = np.array(targets)
-    positions = np.array(positions)
-
-    # 初始化模型
-    model = avril(inputs, targets, positions, state_dim, action_dim)
-
-    # 训练模型
-    print("Training model on synthetic data...")
-    model.train(iters=200, batch_size=4)
-
-    # 测试 reward 输出
-    test_state = inputs[:1, :, 0, :]  # 一个轨迹的第一个状态序列
-    test_pos = positions[:1, :, 0, :]
-    r = model.reward(test_state, test_pos)
-    print("\nSample reward output shape:", r.shape)
-    print("Sample reward output:", r)
-
-    # 测试 Q 值输出
-    q = model.QValue(test_state, test_pos)
-    print("\nSample Q-value output shape:", q.shape)
-    print("Sample Q-value output:", q)
