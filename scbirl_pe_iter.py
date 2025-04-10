@@ -87,4 +87,4 @@ if __name__ =="__main__":
     '''
         Terminal Version
     '''
-    train_model_one_traveler(who = 10013454)
+    train_model_one_traveler(who = 82455786)
