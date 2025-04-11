@@ -68,18 +68,7 @@ class avril:
         """
 
         self.key = random.PRNGKey(seed)
-
-        self.encoder = hk.transform(encoder_model)
-        self.q_network = hk.transform(q_network_model)
-        self.compress_pe_code_complex = hk.transform(compress_pe_code_complex)
-
-        self.inputs = inputs
-        self.targets = targets
-        self.positions = positions
-        self.s_dim = state_dim
-        self.a_dim = action_dim
-        self.state_only = state_only
-        self.encoder_o_dim = 2
+        self._pe_code_mapping = dict()
 
         self.num_layers = num_layers
         self.num_heads = num_heads
@@ -87,14 +76,27 @@ class avril:
         self.dff = dff 
         self.rate = rate
 
+        
+        self.inputs = inputs
+        self.targets = targets
+        self.positions = positions
+        self.s_dim = state_dim
+        self.a_dim = action_dim
+        self.state_only = state_only
+        self.encoder_o_dim = 2
+        
+        self.encoder = hk.transform(encoder_model)
+        self.q_network = hk.transform(q_network_model)
+        # self.compress_pe_code_complex = hk.transform(compress_pe_code_complex)
+
         self.e_params = self.encoder.init(
             self.key, 
-            inputs, positions, num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
+            inputs, positions, self.posicode, self. num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
         )
 
         enc_output = random.normal(self.key, inputs.shape[:-1] + (2,))
         self.q_params = self.q_network.init(
-            self.key, inputs, positions, enc_output, num_layers, num_heads, num_scale, dff, rate, action_dim, self.key
+            self.key, inputs, enc_output, positions, self.posicode, num_layers, num_heads, num_scale, dff, rate, action_dim, self.key
         )
 
         self.params = (self.e_params, self.q_params)
@@ -102,6 +104,28 @@ class avril:
         self.load_params = False
         self.pre_params = None
         return
+    
+    @property
+    def positions(self):
+        return self._positions
+    
+    @positions.setter
+    def positions(self, value):
+        self._positions = value
+        # unique the coords and find the unrecorded coords
+        updated_coords = value.reshape(-1, value.shape[-1]).tolist()
+        recorded_coords = list(self._pe_code_mapping.keys())
+        incoming_coords = [tuple(coords) for coords in updated_coords if coords not in recorded_coords]
+        # if there are new coords, compute the PE code for them
+        if incoming_coords:
+            # update the pe_code dictionary
+            pe_codes = [globalPE(coords, 2 * self.num_heads * self.num_scale).flatten() for coords in incoming_coords]
+            pe_codes = [pe_code.real + pe_code.imag for pe_code in pe_codes]
+            self._pe_code_mapping.update(dict(zip(incoming_coords, pe_codes)))
+    
+    @property
+    def posicode(self):
+        return self._pe_code_mapping
     
     def modelSave(self, model_save_path):
         with open(model_save_path,'wb') as f:
@@ -124,6 +148,7 @@ class avril:
                 self.key,
                 state,
                 positions,
+                self.posicode,
                 self.num_layers,
                 self.num_heads,
                 self.num_scale,
@@ -141,6 +166,7 @@ class avril:
                 self.key,
                 state,
                 positions,
+                self.posicode, 
                 self.num_layers,
                 self.num_heads,
                 self.num_scale,
@@ -156,6 +182,7 @@ class avril:
             state,
             enc_output,
             positions,
+            self.posicode,
             self.num_layers,
             self.num_heads,
             self.num_scale,
@@ -198,6 +225,7 @@ class avril:
                 key,
                 inputs[:, :, state_dim, np.newaxis, :],
                 positions[:, :, state_dim, np.newaxis, :],
+                self.posicode,
                 self.num_layers,
                 self.num_heads,
                 self.num_scale,
@@ -229,6 +257,7 @@ class avril:
             inputs[:, :, 0, np.newaxis, :],
             enc_output,
             positions[:, :, 0, np.newaxis, :],
+            self.posicode,
             self.num_layers,
             self.num_heads,
             self.num_scale,
@@ -250,6 +279,7 @@ class avril:
             inputs[:, :, 1, np.newaxis, :],
             enc_output1,
             positions[:, :, 1, np.newaxis, :],
+            self.posicode,
             self.num_layers,
             self.num_heads,
             self.num_scale,
