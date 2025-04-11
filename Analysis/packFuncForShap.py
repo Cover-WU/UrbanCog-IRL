@@ -35,21 +35,14 @@ def modelPredict(X: np.ndarray[float, float], model, standardize = False,
         The reward can be either standardize or not.
     '''
     feature_num = model.s_dim
-    assert X.shape[1] == 7 * feature_num + 2 , "The input matrix does not have the correct number of features."
+    assert X.shape[1] == feature_num + 2 , "The input matrix does not have the correct number of features."
     state = X[:, :feature_num]
-    pecode_real = X[:, feature_num:4 * feature_num]
-    pecode_imag = X[:, 4 * feature_num:7 * feature_num]
-    # combine pecode_real and pecode_imag into a complex matrix
-    pecode = np.empty_like(pecode_real, dtype=complex)
-    pecode.real = pecode_real
-    pecode.imag = pecode_imag
-    
-    positions = X[:, 7*feature_num:]
+    # combine pecode_real and pecode_imag into a complex matrix    
+    positions = X[:, feature_num:]
     # predict the reward
     predict_function = SIRLM.getComputeFunction(model, attribute_type)
 
     state = state[np.newaxis, :, np.newaxis, :]
-    pecode = pecode[np.newaxis, :, np.newaxis, :]
     positions = positions[np.newaxis, :, np.newaxis, :]
 
 
@@ -62,7 +55,7 @@ def modelPredict(X: np.ndarray[float, float], model, standardize = False,
     #     # note browser
     #     y_pred.append(res_val)
     
-    res_val = predict_function(state, positions,pecode)
+    res_val = predict_function(state, positions)
     y_pred = res_val[0, :, 0]
     
     y_pred = np.array(y_pred)
@@ -101,15 +94,8 @@ def backgroundData(who: int, date = None):
             visit_id_list.append(iden)
         feature_array = np.array(feature_array)
 
-        # calculate pe code vector 
-        state_dim = feature_array.shape[1]        
-        gc_vectors = [SIRLU.globalPE(coord, state_dim) for coord in chain.travel_chain]
-        gc_vectors = np.squeeze(np.array(gc_vectors), axis=-1)
-        gc_array = np.concatenate((gc_vectors.real, gc_vectors.imag), axis=1)
-
-        coords = np.array(chain.travel_chain)  # (lon, lat)
-        
-        one_chain_array = np.concatenate((feature_array, gc_array, coords), axis=1)
+        coords = np.array(chain.travel_chain)  # (lon, lat)        
+        one_chain_array = np.concatenate((feature_array, coords), axis=1)
         total_array_list.append(one_chain_array)
 
     total_array = np.vstack(total_array_list)
@@ -161,13 +147,16 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
 
     if blank:
         built_bench = np.zeros(model.s_dim).reshape(1, -1)
-        locat_bench = np.mean(dataset[:, model.s_dim:], axis=0).reshape(1, -1)
+        # average location considering visiting frequency.
+        # locat_bench = np.mean(dataset[:, model.s_dim:], axis=0).reshape(1, -1)
+        locat_bench = np.average(dataset[:, model.s_dim:], weights=dataset_freq, axis=0).reshape(1, -1)
         # zero_bench = np.zeros(dataset.shape[1]).reshape(1, -1)
         # 基线意味着：建成环境取最小值，位置环境取平均值
         home_bench = np.hstack((built_bench, locat_bench))
     else:
         # 全部取平均值
         home_bench = np.mean(dataset, axis=0).reshape(1, -1)
+        # home_bench = np.average(dataset, weights=dataset_freq, axis=0).reshape(1, -1)
 
     reward_vector = modelPredict(X=dataset_uni, model=model, attribute_type='reward')
     mu = np.average(reward_vector, weights=dataset_freq)
@@ -184,19 +173,16 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
     # below: group the shape var names
     varchr = 'LU_Business,LU_Green,LU_Industry,LU_Public,LU_Residence,subway,density,intersections,road_density,rent'
     varname_BE = varchr.split(',')
-    varname_PE = ['PE%02d' % i for i in range(6 * len(varname_BE))]
     varname_PO = ['PosX', 'PosY']
-    varname = varname_BE + varname_PE + varname_PO
+    varname = varname_BE + varname_PO
     if binary_be_vs_loc:
         groupmap = {
             'BuiltAttr': varname_BE,
-            'Location': varname_PE,
-            'Position': varname_PO
+            'Location': varname_PO
         }
     else:
         groupmap = {v: [v] for v in varname_BE}
-        groupmap['Location'] = varname_PE
-        groupmap['Position'] = varname_PO
+        groupmap['Location'] = varname_PO
     shap_grouped_by_classes = grouped_shap(shap_vals=shap_values.values, features=varname, groups=groupmap)
     return shap_grouped_by_classes, dataset_freq, dataset_iden
 
