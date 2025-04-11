@@ -153,12 +153,15 @@ def save_intermediate_results(results, filename):
     with open(filename, 'wb') as f:
         pickle.dump(results, f)
 
+
 if __name__ =="__main__":
     '''
         Iteration Version
     '''
-    # for who in who_list:
-    #     train_model_one_traveler(who = who)
+
+    who_list = [1102234]
+    for who in who_list:
+        train_model_one_traveler(who = who)
 
     '''
         Parallel Version
@@ -176,19 +179,19 @@ if __name__ =="__main__":
     '''
         Professional Parallel Version
     '''
-    file_list = os.listdir(UserDataPart)
-    # Example who_list
-    who_list = [int(pid) for pid in file_list]
+    # file_list = os.listdir(UserDataPart)
+    # # Example who_list
+    # who_list = [int(pid) for pid in file_list]
     
-    # Configure Dask for your hardware
-    n_workers = 32  # Number of CPU cores
-    threads_per_worker = 4  # Threads per worker (128/32 = 4)
+    # # Configure Dask for your hardware
+    # n_workers = 32  # Number of CPU cores
+    # threads_per_worker = 4  # Threads per worker (128/32 = 4)
     
-    # Train models with batch processing
-    results = train_model_batch(
-        who_list,
-        batch_size=n_workers  # Adjust based on memory requirements
-    )
+    # # Train models with batch processing
+    # results = train_model_batch(
+    #     who_list,
+    #     batch_size=n_workers  # Adjust based on memory requirements
+    # )
     
     '''
         Terminal Version
