@@ -42,7 +42,7 @@ def encoder_model(inputs, positions, num_layers, num_heads, num_scale, dff, rate
     pe_array = np.stack(pe_list, axis=0)  # shape: (traj_n * pair_n * 2, embedding_dim)
     pe_code = pe_array.reshape(traj_n, pair_n, state_n, embedding_dim)  # reshape back
 
-    pe_real_code,pe_imag_code = np.real(pe_code), np.imag(pe_code)
+    pe_real_code, pe_imag_code = np.real(pe_code), np.imag(pe_code)
     x = inputs + pe_real_code + pe_imag_code
     
     # Initialize transformer layer
