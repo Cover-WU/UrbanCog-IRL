@@ -88,7 +88,7 @@ def train_models_parallel(who_list, n_workers=32, threads_per_worker=4):
     cluster = LocalCluster(
         n_workers=n_workers,
         threads_per_worker=threads_per_worker,
-        memory_limit='200GB'  # Adjust based on your server's RAM
+        memory_limit='60GB'  # Adjust based on your server's RAM
     )
     client = Client(cluster)
     print(f"Dashboard link: {client.dashboard_link}")
