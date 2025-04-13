@@ -45,7 +45,6 @@ def modelPredict(X: np.ndarray[float, float], model, standardize = False,
     state = state[np.newaxis, :, np.newaxis, :]
     positions = positions[np.newaxis, :, np.newaxis, :]
 
-
     # y_pred = list()
     # for row in range(len(X)):
     #     # ref numpy take函数使用
