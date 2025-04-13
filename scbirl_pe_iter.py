@@ -46,6 +46,7 @@ def train_model_one_traveler(who: int):
     # NOTE: Compute rewards after migration
     SIRLP.afterMigrt(model, data_dir, model_dir, start_date = iter_start_date, iter_type='recent')
 
+
 def model_repo_establishment(model: SIRLT.avril, path: str):
     if not os.path.exists(path):
         os.makedirs(path)

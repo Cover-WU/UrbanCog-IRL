@@ -112,10 +112,16 @@ class avril:
     @positions.setter
     def positions(self, value):
         self._positions = value
+        self._update_posicode(value)
+    
+    @property
+    def posicode(self):
+        return self._pe_code_mapping
+    
+    def _update_posicode(self, value):
         # unique the coords and find the unrecorded coords
-        updated_coords = value.reshape(-1, value.shape[-1]).tolist()
-        recorded_coords = list(self._pe_code_mapping.keys())
-        incoming_coords = [tuple(coords) for coords in updated_coords if coords not in recorded_coords]
+        updated_coords = [tuple(p) for p in onp.unique(value.reshape(-1, value.shape[-1]), axis=0)]
+        incoming_coords = [p for p in updated_coords if p not in self._pe_code_mapping]
         # if there are new coords, compute the PE code for them
         if incoming_coords:
             # update the pe_code dictionary
@@ -123,14 +129,10 @@ class avril:
             pe_codes = [pe_code.real + pe_code.imag for pe_code in pe_codes]
             self._pe_code_mapping.update(dict(zip(incoming_coords, pe_codes)))
     
-    @property
-    def posicode(self):
-        return self._pe_code_mapping
-    
     def modelSave(self, model_save_path):
         with open(model_save_path,'wb') as f:
             print("save params to {}!".format(model_save_path))
-            pickle.dump(self.params, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self.params, f, protocol=pickle.HIGHEST_PROTOCOL) 
     
     def loadParams(self,model_path):
         print("load params from {}!".format(model_path))
@@ -142,6 +144,7 @@ class avril:
             self.q_params = self.params[1]
 
     def reward(self,state,positions):
+        self._update_posicode(positions)
         #  Returns reward function parameters for a given state
         r_par = self.encoder.apply(
                 self.e_params,
@@ -161,6 +164,7 @@ class avril:
         return r_par
     
     def QValue(self, state, positions):
+        self._update_posicode(positions)
         enc_output = self.encoder.apply(
                 self.e_params,
                 self.key,
