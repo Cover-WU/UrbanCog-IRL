@@ -155,7 +155,7 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
         home_bench = np.hstack((built_bench, locat_bench))
     else:
         # 全部取平均值
-        home_bench = np.mean(dataset, axis=0).reshape(1, -1)
+        home_bench = np.mean(dataset, axis=0).reshape(1, -1) 
         # home_bench = np.average(dataset, weights=dataset_freq, axis=0).reshape(1, -1)
 
     reward_vector = modelPredict(X=dataset_uni, model=model, attribute_type='reward')
@@ -233,7 +233,7 @@ def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):
         # parallel version
         CPU_COUNT = len(date_list)
         combination = [(date, user, binary_be_vs_loc, blank) for date in reversed(date_list)]
-        with mp.Pool(CPU_COUNT) as pool:
+        with mp.get_context('spawn').Pool(CPU_COUNT) as pool:
             shap_dict_values = pool.starmap(modelRewardExplain, combination)
         shap_dict = dict(zip(reversed(date_list), shap_dict_values))
     return shap_dict
