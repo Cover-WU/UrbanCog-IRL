@@ -49,7 +49,7 @@ def encoder_model(inputs, positions, posicode, num_layers, num_heads, num_scale,
         x = layer(x, positions, rng)
 
     final_layer = hk.Linear(output_dim)
-    final_output = final_layer(inputs)
+    final_output = final_layer(x)
     return final_output
 
 def create_look_ahead_mask(size):
@@ -81,7 +81,7 @@ def q_network_model(inputs, enc_output, positions, posicode, num_layers, num_hea
         x = layer(x, enc_output, look_ahead_mask, None, positions, rng)
 
     final_layer = hk.Linear(output_dim)
-    return final_layer(inputs)
+    return final_layer(x)
 
 def klGaussianStandard(mean, var):
     return 0.5 * (-np.log(var) - 1.0 + var + mean ** 2)
