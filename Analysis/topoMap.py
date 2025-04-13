@@ -288,9 +288,9 @@ def clusterLocations(who, date, res_save=True):
     else:
         params_path = model_dir + f'initial_model.pickle'
     
-    inputs, targets_action, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    inputs, targets_action, positions, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
     logging.debug(inputs.shape,targets_action.shape,pe_code.shape)
-    model = SIRLT.avril(inputs, targets_action, pe_code, state_dim, action_dim, state_only=True)
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
 
     # model.loadParams(model_dir + 'params_transformer_pe.pickle')
     model.loadParams(params_path)
@@ -422,9 +422,9 @@ def clusterLocationsDeprec(who, date, res_save = True):
     else:
         params_path = model_dir + f'initial_model.pickle'
     
-    inputs, targets_action, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    inputs, targets_action, positions, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
     print(inputs.shape,targets_action.shape,pe_code.shape)
-    model = SIRLT.avril(inputs, targets_action, pe_code, state_dim, action_dim, state_only=True)
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
 
     # model.loadParams(model_dir + 'params_transformer_pe.pickle')
     model.loadParams(params_path)

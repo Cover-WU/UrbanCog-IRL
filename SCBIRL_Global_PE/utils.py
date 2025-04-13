@@ -59,9 +59,9 @@ def loadModel(who, date = None, prior = True, accumulate = False, tabular = Fals
     model_dir = './model/' + toWhoString(who) + '/'
     
     iter_start_date = load_traveler(who).iter_start_date
-    inputs, targets_action, pe_code, action_dim, state_dim = loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    print(inputs.shape, targets_action.shape, pe_code.shape)
-    model = SIRLT.avril(inputs, targets_action, pe_code, state_dim, action_dim, state_only=True)
+    inputs, targets_action, positions, pe_code, action_dim, state_dim = loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    print(inputs.shape, targets_action.shape, positions.shape, pe_code.shape)
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
     if tabular: 
         return model
     
