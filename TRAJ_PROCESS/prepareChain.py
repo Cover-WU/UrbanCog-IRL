@@ -124,7 +124,6 @@ def featureset2allFeature(data):
     return res.reset_index(drop = True)
 
 
-
 def createCoordsMapping(data):
     coords_series = data.apply(lambda row: (row['longitude'], row['latitude']), axis=1)
     # concatenate the two Series
@@ -155,7 +154,6 @@ def writing2DataFolder(data):
     all_feature = featureset2allFeature(data)
     coords_fnid_mapping, id_coords_mapping = createCoordsMapping(data)
     id_tempo_mapping = userTimeUseDistribution(data, id_coords_mapping)
-    id_position_mapping = createPositionMapping(id_coords_mapping)
     all_json = featureset2Json(data)
     visited_date = data['date'].unique().tolist()
     if len(visited_date) < 3 * training_baseline_count:

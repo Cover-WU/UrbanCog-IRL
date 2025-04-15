@@ -7,7 +7,7 @@ sys.path.append(working_directory)
 import SCBIRL_Global_PE.SCBIRLTransformer as SIRLT
 import SCBIRL_Global_PE.utils as SIRLU
 import SCBIRL_Global_PE.migrationProcess as SIRLM
-from SCBIRL_Global_PE.utils import TravelData, Traveler, UserDataPart, coords2UTMmeters
+from SCBIRL_Global_PE.utils import TravelData, Traveler, UserDataPart
 
 import numpy as np
 import pandas as pd
@@ -26,34 +26,6 @@ jax.config.update('jax_platform_name', 'cpu')
 MAX_CPU_COUNT = mp.cpu_count() - 1
 # MAX_CPU_COUNT = 48
 
-def loadModel(who, date = None, prior = True, accumulate = False, tabular = False):
-    # todo: move to the utils
-    '''
-        Load the model from the model directory.
-        Must correctly set the directory at first.
-    '''
-    data_dir = UserDataPart + SIRLU.toWhoString(who) + '/'
-    model_dir = './model/' + SIRLU.toWhoString(who) + '/'
-    
-    iter_start_date = SIRLU.load_traveler(who).iter_start_date
-    inputs, targets_action, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    print(inputs.shape, targets_action.shape, pe_code.shape)
-    model = SIRLT.avril(inputs, targets_action, pe_code, state_dim, action_dim, state_only=True)
-    if tabular: 
-        return model
-    
-    if date is None or date < iter_start_date:
-        path = model_dir + 'initial_model.pickle'
-    else:
-        if prior:
-            modeltype = 'evolution_model/iterated_model_'        
-        elif accumulate:
-            modeltype = 'empirical_model/increased_model_'
-        else:
-            modeltype = 'no_prior_model/ignorant_model_'
-        path = model_dir + modeltype + '{date}.pickle'.format(date=date)
-    model.loadParams(path)
-    return model
 
 def modelPredict(X: np.ndarray[float, float], model, standardize = False,
                  attribute_type = 'reward', mu = None, sigma = None):
@@ -63,17 +35,29 @@ def modelPredict(X: np.ndarray[float, float], model, standardize = False,
         The reward can be either standardize or not.
     '''
     feature_num = model.s_dim
-    assert X.shape[1] == feature_num + 2, "The input matrix does not have the correct number of features."
+    assert X.shape[1] == feature_num + 2 , "The input matrix does not have the correct number of features."
     state = X[:, :feature_num]
-    positions = X[:, feature_num:feature_num+2]
-    positions = coords2UTMmeters(positions)
+    # combine pecode_real and pecode_imag into a complex matrix    
+    positions = X[:, feature_num:]
     # predict the reward
-    state = state.reshape(1, -1, 1, state.shape[1])
-    positions = positions.reshape(1, -1, 1, positions.shape[1])
+    predict_function = SIRLM.getComputeFunction(model, attribute_type)
 
-    y_pred = model.reward(state, positions)
-    y_pred = y_pred[0, :, 0] 
+    state = state[np.newaxis, :, np.newaxis, :]
+    positions = positions[np.newaxis, :, np.newaxis, :]
+
+    # y_pred = list()
+    # for row in range(len(X)):
+    #     # ref numpy take函数使用
+    #     state_current = np.take(state, indices=row, axis=-2)
+    #     pecode_current = np.take(pecode, indices=row, axis=-2)
+    #     res_val = predict_function(state_current, pecode_current)
+    #     # note browser
+    #     y_pred.append(res_val)
     
+    res_val = predict_function(state, positions)
+    y_pred = res_val[0, :, 0]
+    
+    y_pred = np.array(y_pred)
     if standardize:
         y_pred = (y_pred - mu) / sigma
     return y_pred
@@ -109,9 +93,7 @@ def backgroundData(who: int, date = None):
             visit_id_list.append(iden)
         feature_array = np.array(feature_array)
 
-        # calculate pe code vector 
-        coords = np.array(chain.travel_chain)  # (lon, lat)
-
+        coords = np.array(chain.travel_chain)  # (lon, lat)        
         one_chain_array = np.concatenate((feature_array, coords), axis=1)
         total_array_list.append(one_chain_array)
 
@@ -163,15 +145,17 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
     print('Data with {k} rows'.format(k=dataset_uni.shape[0]))
 
     if blank:
-        # built_bench = np.zeros(model.s_dim).reshape(1, -1)
-        built_bench = np.mean(dataset[:, :model.s_dim], axis=0).reshape(1, -1)
-        locat_bench = np.mean(dataset[:, model.s_dim:], axis=0).reshape(1, -1)
+        built_bench = np.zeros(model.s_dim).reshape(1, -1)
+        # average location considering visiting frequency.
+        # locat_bench = np.mean(dataset[:, model.s_dim:], axis=0).reshape(1, -1)
+        locat_bench = np.average(dataset[:, model.s_dim:], weights=dataset_freq, axis=0).reshape(1, -1)
         # zero_bench = np.zeros(dataset.shape[1]).reshape(1, -1)
         # 基线意味着：建成环境取最小值，位置环境取平均值
         home_bench = np.hstack((built_bench, locat_bench))
     else:
         # 全部取平均值
-        home_bench = np.mean(dataset, axis=0).reshape(1, -1)
+        home_bench = np.mean(dataset, axis=0).reshape(1, -1) 
+        # home_bench = np.average(dataset, weights=dataset_freq, axis=0).reshape(1, -1)
 
     reward_vector = modelPredict(X=dataset_uni, model=model, attribute_type='reward')
     mu = np.average(reward_vector, weights=dataset_freq)
@@ -188,16 +172,16 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
     # below: group the shape var names
     varchr = 'LU_Business,LU_Green,LU_Industry,LU_Public,LU_Residence,subway,density,intersections,road_density,rent'
     varname_BE = varchr.split(',')
-    varname_PE = ['lon', 'lat']
-    varname = varname_BE + varname_PE
+    varname_PO = ['PosX', 'PosY']
+    varname = varname_BE + varname_PO
     if binary_be_vs_loc:
         groupmap = {
-            'BuiltAttr': varname[:len(varname_BE)],
-            'Location': varname[len(varname_BE):]
+            'BuiltAttr': varname_BE,
+            'Location': varname_PO
         }
     else:
         groupmap = {v: [v] for v in varname_BE}
-        groupmap['Location'] = varname_PE
+        groupmap['Location'] = varname_PO
     shap_grouped_by_classes = grouped_shap(shap_vals=shap_values.values, features=varname, groups=groupmap)
     return shap_grouped_by_classes, dataset_freq, dataset_iden
 
@@ -246,9 +230,9 @@ def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):
             shap_dict[date] = modelRewardExplain(date, who=user, binary_be_vs_loc=binary_be_vs_loc, blank=blank)
     else:
         # parallel version
-        MAX_CPU_COUNT = mp.cpu_count() - 2
+        CPU_COUNT = len(date_list)
         combination = [(date, user, binary_be_vs_loc, blank) for date in reversed(date_list)]
-        with mp.Pool(MAX_CPU_COUNT) as pool:
+        with mp.get_context('spawn').Pool(CPU_COUNT) as pool:
             shap_dict_values = pool.starmap(modelRewardExplain, combination)
         shap_dict = dict(zip(reversed(date_list), shap_dict_values))
     return shap_dict
@@ -315,7 +299,7 @@ if __name__ == '__main__':
     user_list.sort()
     for user in user_list:
         # note: remember to change back
-        res = explainOneUser(user, parallel=True, binary_be_vs_loc=False)
+        res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
         with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
             pickle.dump(res, f)
     '''
@@ -345,6 +329,6 @@ if __name__ == '__main__':
     '''
     Test area
     '''
-    shap_dict = dict()
-    date = 20230507
-    shap_dict[date] = modelRewardExplain(date, who=1102234)
+    # shap_dict = dict()
+    # date = 20230507
+    # shap_dict[date] = modelRewardExplain(date, who=1102234)

@@ -62,7 +62,18 @@ Thumbs.db
 
 # Anaconda / Jupyter specific
 *.egg-info/
-*.ipynb
+# *.ipynb
 .envrc
 *.sqlite
 *.db
+
+# models and products
+model/
+product/
+data*/
+
+# any history and chat records
+.history/
+.specstory/
+
+
