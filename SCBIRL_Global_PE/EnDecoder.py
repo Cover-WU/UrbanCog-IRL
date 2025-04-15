@@ -1,9 +1,10 @@
 import haiku as hk
 
 import jax.numpy as np
-import jax
 
+from time import time
 from .transformer import *
+from .utils import globalPE
 
 def compress_pe_code_complex(pe_code, target_dim):
     pe_code_real = np.real(pe_code)
@@ -26,45 +27,56 @@ def compress_pe_code_complex(pe_code, target_dim):
     return pe_real_compressed,pe_imag_compressed
 
 
-def encoder_model(inputs, positions, num_layers, num_heads, num_scale, dff_ratio, rate, output_dim, rng):
-    """
-    inputs: 输入特征 [batch_size, seq_len, 2, 10]
-    positions: 经纬度坐标 [batch_size, seq_len, 2, 2]
-    """
-    position_dim = positions.shape[-1]
+def encoder_model(inputs, positions, posicode, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
+    # Combine inputs and pe code
+    traj_n, pair_n, state_n, position_dim = positions.shape
     embedding_dim = 2 * (position_dim + 1) * num_scale * num_heads
     feature_embedding_layer = hk.Linear(embedding_dim)
-    x = feature_embedding_layer(inputs)
+    inputs = feature_embedding_layer(inputs)
     
-    transformer_layers = [TransformerLayer(embedding_dim, num_heads, dff_ratio, use_rotation=True, rate=rate) 
+    # Compute global PE
+    flat_positions = positions.reshape(-1, position_dim).tolist()
+    flat_positions = [tuple(position) for position in flat_positions]
+    flat_pe_codes = np.stack([posicode[position] for position in flat_positions], axis=0)
+    pe_code = flat_pe_codes.reshape(traj_n, pair_n, state_n, embedding_dim)  # reshape back
+    x = inputs + pe_code
+    
+    # Initialize transformer layer
+    transformer_layers = [TransformerLayer(embedding_dim, num_heads, dff, use_rotation=True, rate=rate) 
                         for _ in range(num_layers)]
-    
+    # forward 
     for layer in transformer_layers:
         x = layer(x, positions, rng)
 
     final_layer = hk.Linear(output_dim)
-    return final_layer(x)
+    final_output = final_layer(x)
+    return final_output
 
 def create_look_ahead_mask(size):
     mask = np.triu(np.ones((size, size)), k=1)
-    mask = mask[np.newaxis, np.newaxis, ...]  # [1, 1, size, size]
+    mask = mask[np.newaxis, np.newaxis, ...]
     return mask
 
-def q_network_model(inputs, positions, enc_output, num_layers, num_heads, num_scale, dff_ratio, rate, output_dim, rng):
-    """
-    inputs: 输入特征 [batch_size, seq_len, 2, 10]
-    positions: 经纬度坐标 [batch_size, seq_len, 2, 2]
-    """
-    position_dim = positions.shape[-1]
+def q_network_model(inputs, enc_output, positions, posicode, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
+    # combine inputs and pe code
+    traj_n, pair_n, state_n, position_dim = positions.shape
     embedding_dim = 2 * (position_dim + 1) * num_scale * num_heads
     feature_embedding_layer = hk.Linear(embedding_dim)
-    x = feature_embedding_layer(inputs)
+    inputs = feature_embedding_layer(inputs)
     
-    transformer_decoder_layers = [TransformerDecoderLayer(embedding_dim, num_heads, dff_ratio, use_rotation=True, rate=rate) 
+    # Compute global PE
+    flat_positions = positions.reshape(-1, position_dim).tolist()
+    flat_positions = [tuple(position) for position in flat_positions]
+    flat_pe_codes = np.stack([posicode[position] for position in flat_positions], axis=0)
+    pe_code = flat_pe_codes.reshape(traj_n, pair_n, state_n, embedding_dim)  # reshape back
+    x = inputs + pe_code
+    
+    # Initialize transformer decoder layer
+    transformer_decoder_layers = [TransformerDecoderLayer(embedding_dim, num_heads, dff, use_rotation=True, rate=rate) 
                                 for _ in range(num_layers)]
     
-    look_ahead_mask = create_look_ahead_mask(inputs.shape[1]*inputs.shape[2]) 
-    
+    look_ahead_mask = create_look_ahead_mask(inputs.shape[1]*inputs.shape[2])
+    # forward function
     for layer in transformer_decoder_layers:
         x = layer(x, enc_output, look_ahead_mask, None, positions, rng)
 

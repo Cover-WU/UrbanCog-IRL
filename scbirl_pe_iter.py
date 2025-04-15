@@ -1,6 +1,6 @@
 import pickle
-import os
 import copy
+import os
 import SCBIRL_Global_PE.SCBIRLTransformer as SIRLT
 import SCBIRL_Global_PE.utils as SIRLU
 import SCBIRL_Global_PE.migrationProcess as SIRLP
@@ -15,36 +15,60 @@ import dask
 from dask.distributed import Client, LocalCluster
 import numpy as np
 from tqdm.auto import tqdm
-import multiprocessing as mp
 
-def train_model_one_traveler(who: int, no_prior = True, initial = True, prior = True, recent = True):
+
+def train_model_one_traveler(who: int):
     data_dir = UserDataPart + '{:09d}/'.format(who)
-    model_dir = './model/{:09d}/'.format(who)
+    model_dir = '/root/autodl-tmp/model/{:09d}/'.format(who)
     
     iter_start_date = SIRLU.load_traveler(who).iter_start_date
     # here the `iter_start_date` is a constant defined by utility module.
-    inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    inputs, targets_action, positions, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    print(inputs.shape, targets_action.shape, positions.shape, pe_code.shape)
     # tabular rasa model
     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
     # model = avril_without_pe(inputs, targets_action,  state_dim, action_dim, state_only=True)
 
-    # model the model with no prior knowledge
-    if no_prior:
-        PriorKnow.experienceModel(model, data_dir, model_dir, start_date = iter_start_date)
+    # model the model with no prior knowledge, just nearest experience
+    # if the training is interrupted, we can resume the training from the last date.
+    PriorKnow.experienceModel(model, data_dir, model_dir, start_date = iter_start_date)
     # NOTE: Compute rewards after migration
     model_no_prior = copy.deepcopy(model)
-    if prior:
-        SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, iter_type='prior')
+    # from the tabular rasa, iteratively update the model with accumulated experience
+    SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, iter_type='prior')
 
     # NOTE: train the model before migration
-    if initial:
-        model.train(iters=1000, loss_threshold=0.001)
-        model_save_path = model_dir + 'initial_model.pickle'
-        model.modelSave(model_save_path)
+    model.train(iters=1000, loss_threshold=0.01)
+    model_repo_establishment(model, model_dir)
+    model_save_path = model_dir + 'initial_model.pickle'
+    model.modelSave(model_save_path)
 
     # NOTE: Compute rewards after migration
-    if recent:
-        SIRLP.afterMigrt(model, data_dir, model_dir, start_date = iter_start_date, iter_type='recent')
+    SIRLP.afterMigrt(model, data_dir, model_dir, start_date = iter_start_date, iter_type='recent')
+
+
+def model_repo_establishment(model: SIRLT.avril, path: str):
+    if not os.path.exists(path):
+        os.makedirs(path)
+    # create a txt file to record the model configuration
+    num_layers = model.num_layers
+    num_heads = model.num_heads
+    num_scales = model.num_scale
+    dff_ratio = model.dff
+    dropout_rate = model.rate
+    
+    text = f"""
+    Model Configuration:
+    -------------------
+    Number of layers: {num_layers}
+    Number of heads: {num_heads}
+    Number of scales: {num_scales}
+    Feedforward ratio: {dff_ratio}
+    Dropout rate: {dropout_rate}
+    """
+    with open(path + 'model_config.txt', 'w') as f:
+        f.write(text)
+
 
 def train_models_parallel(who_list, n_workers=32, threads_per_worker=4):
     """
@@ -64,7 +88,7 @@ def train_models_parallel(who_list, n_workers=32, threads_per_worker=4):
     cluster = LocalCluster(
         n_workers=n_workers,
         threads_per_worker=threads_per_worker,
-        memory_limit='4GB'  # Adjust based on your server's RAM
+        memory_limit='60GB'  # Adjust based on your server's RAM
     )
     client = Client(cluster)
     print(f"Dashboard link: {client.dashboard_link}")
@@ -130,6 +154,7 @@ def save_intermediate_results(results, filename):
     with open(filename, 'wb') as f:
         pickle.dump(results, f)
 
+
 if __name__ =="__main__":
     '''
         Iteration Version
@@ -137,11 +162,11 @@ if __name__ =="__main__":
     # who_list = [1102234]
     # for who in who_list:
     #     train_model_one_traveler(who = who)
+
     '''
         Parallel Version
     '''
     # import multiprocessing as mp
-    # import os
     
     # MAX_CPU_COUNT = mp.cpu_count() - 2
     # done_who = []
@@ -154,31 +179,24 @@ if __name__ =="__main__":
     '''
         Professional Parallel Version
     '''
-    # file_list = os.listdir(UserDataPart)
-    # # Example who_list
-    # who_list = [int(pid) for pid in file_list]
-    
-    # # Configure Dask for your hardware
-    # n_workers = 32  # Number of CPU cores
-    # threads_per_worker = 4  # Threads per worker (128/32 = 4)
-    
-    # # Train models with batch processing
-    # results = train_model_batch(
-    #     who_list,
-    #     batch_size=n_workers  # Adjust based on memory requirements
-    # )
-    
-    MAX_CPU_COUNT = mp.cpu_count() - 2
-    done_who = []
     file_list = os.listdir(UserDataPart)
-    who_list = [int(pid) for pid in file_list]
-    who_list = [1102234]
-    for who in done_who:
-        who_list.remove(who)
-    with mp.Pool(MAX_CPU_COUNT) as pool:
-        args = [(who, False, False, False, True) for who in who_list]  # 最后一个 True 是 recent 的默认
-        pool.starmap(train_model_one_traveler, args)
-
+    # Example who_list
+    # who_list = [int(pid) for pid in file_list]
+    who_list = [68058890, 10013454, 58272403,
+                 6945721, 71209087, 93854949,
+                82455786, 58124481, 54636959,
+                 1102234, 25679537,102181433]  # Limit to 10 travelers for testing
+    
+    # Configure Dask for your hardware
+    n_workers = 32  # Number of CPU cores
+    threads_per_worker = 4  # Threads per worker (128/32 = 4)
+    
+    # Train models with batch processing
+    results = train_model_batch(
+        who_list,
+        batch_size=n_workers  # Adjust based on memory requirements
+    )
+    
     '''
         Terminal Version
     '''
