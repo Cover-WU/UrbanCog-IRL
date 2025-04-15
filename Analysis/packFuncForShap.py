@@ -230,9 +230,9 @@ def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):
             shap_dict[date] = modelRewardExplain(date, who=user, binary_be_vs_loc=binary_be_vs_loc, blank=blank)
     else:
         # parallel version
-        CPU_COUNT = len(date_list)
+        CPU_COUNT = min(len(date_list), mp.cpu_count() - 1)
         combination = [(date, user, binary_be_vs_loc, blank) for date in reversed(date_list)]
-        with mp.get_context('spawn').Pool(CPU_COUNT) as pool:
+        with mp.Pool(CPU_COUNT) as pool:
             shap_dict_values = pool.starmap(modelRewardExplain, combination)
         shap_dict = dict(zip(reversed(date_list), shap_dict_values))
     return shap_dict
@@ -299,7 +299,7 @@ if __name__ == '__main__':
     user_list.sort()
     for user in user_list:
         # note: remember to change back
-        res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
+        res = explainOneUser(user, parallel=False, binary_be_vs_loc=False, blank=False)
         with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
             pickle.dump(res, f)
     '''
@@ -316,16 +316,16 @@ if __name__ == '__main__':
     '''
     Inspect the baseline.
     '''
-    model_dir = './model/'
-    user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
-    user_list.sort()
-    reward_dict = dict()
-    for user in user_list:
-        date_list = modelDateOfUser(user)
-        for date in date_list:
-            reward_dict[(user, date)] = modelRewardBaselineCalculation(date, who=user)
-            with open('./product/reward_res.pkl', 'wb') as f:
-                    pickle.dump(reward_dict, f)
+    # model_dir = './model/'
+    # user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
+    # user_list.sort()
+    # reward_dict = dict()
+    # for user in user_list:
+    #     date_list = modelDateOfUser(user)
+    #     for date in date_list:
+    #         reward_dict[(user, date)] = modelRewardBaselineCalculation(date, who=user)
+    #         with open('./product/reward_res.pkl', 'wb') as f:
+    #                 pickle.dump(reward_dict, f)
     '''
     Test area
     '''
