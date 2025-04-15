@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 
 def train_model_one_traveler(who: int):
     data_dir = UserDataPart + '{:09d}/'.format(who)
-    model_dir = '/root/autodl-tmp/model/{:09d}/'.format(who)
+    model_dir = 'model/{:09d}/'.format(who)
     
     iter_start_date = SIRLU.load_traveler(who).iter_start_date
     # here the `iter_start_date` is a constant defined by utility module.
@@ -29,13 +29,13 @@ def train_model_one_traveler(who: int):
     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
     # model = avril_without_pe(inputs, targets_action,  state_dim, action_dim, state_only=True)
 
-    # model the model with no prior knowledge, just nearest experience
-    # if the training is interrupted, we can resume the training from the last date.
-    PriorKnow.experienceModel(model, data_dir, model_dir, start_date = iter_start_date)
-    # NOTE: Compute rewards after migration
-    model_no_prior = copy.deepcopy(model)
-    # from the tabular rasa, iteratively update the model with accumulated experience
-    SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, iter_type='prior')
+    # # model the model with no prior knowledge, just nearest experience
+    # # if the training is interrupted, we can resume the training from the last date.
+    # PriorKnow.experienceModel(model, data_dir, model_dir, start_date = iter_start_date)
+    # # NOTE: Compute rewards after migration
+    # model_no_prior = copy.deepcopy(model)
+    # # from the tabular rasa, iteratively update the model with accumulated experience
+    # SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, iter_type='prior')
 
     # NOTE: train the model before migration
     model.train(iters=1000, loss_threshold=0.01)
@@ -179,25 +179,26 @@ if __name__ =="__main__":
     '''
         Professional Parallel Version
     '''
-    file_list = os.listdir(UserDataPart)
-    # Example who_list
-    # who_list = [int(pid) for pid in file_list]
-    who_list = [68058890, 10013454, 58272403,
-                 6945721, 71209087, 93854949,
-                82455786, 58124481, 54636959,
-                 1102234, 25679537,102181433]  # Limit to 10 travelers for testing
+    # file_list = os.listdir(UserDataPart)
+    # # Example who_list
+    # # who_list = [int(pid) for pid in file_list]
+    # who_list = [68058890, 10013454, 58272403,
+    #              6945721, 71209087, 93854949,
+    #             82455786, 58124481, 54636959,
+    #              1102234, 25679537,102181433]  # Limit to 10 travelers for testing
     
-    # Configure Dask for your hardware
-    n_workers = 32  # Number of CPU cores
-    threads_per_worker = 4  # Threads per worker (128/32 = 4)
+    # # Configure Dask for your hardware
+    # n_workers = 32  # Number of CPU cores
+    # threads_per_worker = 4  # Threads per worker (128/32 = 4)
     
-    # Train models with batch processing
-    results = train_model_batch(
-        who_list,
-        batch_size=n_workers  # Adjust based on memory requirements
-    )
+    # # Train models with batch processing
+    # results = train_model_batch(
+    #     who_list,
+    #     batch_size=n_workers  # Adjust based on memory requirements
+    # )
     
     '''
         Terminal Version
     '''
     # train_model_one_traveler(who = 1102234)
+    pass

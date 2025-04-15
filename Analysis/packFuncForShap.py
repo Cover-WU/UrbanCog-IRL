@@ -294,14 +294,14 @@ if __name__ == '__main__':
     '''
     Half Parallel Version
     '''
-    model_dir = './model/'
-    user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
-    user_list.sort()
-    for user in user_list:
-        # note: remember to change back
-        res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
-        with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
-            pickle.dump(res, f)
+    # model_dir = './model/'
+    # user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
+    # user_list.sort()
+    # for user in user_list:
+    #     # note: remember to change back
+    #     res = explainOneUser(user, parallel=False, binary_be_vs_loc=False, blank=False)
+    #     with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
+    #         pickle.dump(res, f)
     '''
     By Hand
     '''
@@ -316,19 +316,20 @@ if __name__ == '__main__':
     '''
     Inspect the baseline.
     '''
-    model_dir = './model/'
-    user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
-    user_list.sort()
-    reward_dict = dict()
-    for user in user_list:
-        date_list = modelDateOfUser(user)
-        for date in date_list:
-            reward_dict[(user, date)] = modelRewardBaselineCalculation(date, who=user)
-            with open('./product/reward_res.pkl', 'wb') as f:
-                    pickle.dump(reward_dict, f)
+    # model_dir = './model/'
+    # user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
+    # user_list.sort()
+    # reward_dict = dict()
+    # for user in user_list:
+    #     date_list = modelDateOfUser(user)
+    #     for date in date_list:
+    #         reward_dict[(user, date)] = modelRewardBaselineCalculation(date, who=user)
+    #         with open('./product/reward_res.pkl', 'wb') as f:
+    #                 pickle.dump(reward_dict, f)
     '''
     Test area
     '''
     # shap_dict = dict()
     # date = 20230507
     # shap_dict[date] = modelRewardExplain(date, who=1102234)
+    pass
