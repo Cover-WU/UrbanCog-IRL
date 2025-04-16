@@ -70,7 +70,7 @@ Thumbs.db
 # models and products
 model/
 product/
-data*/
+data/
 backup/
 
 # any history and chat records
