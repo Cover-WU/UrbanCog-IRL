@@ -42,7 +42,7 @@ class avril:
         state_only: bool = True,
         num_layers: int = 2,
         num_heads: int = 1,
-        num_scale: int = 8,
+        num_scale: int = 4,
         dff = 2,
         rate = 0.1,
         seed: int = 41310,
@@ -311,6 +311,7 @@ class avril:
             # 有先验迭代
             e_params_pre, _, _ = self.pre_params
             means_pre, log_sds_pre , _ = getRewardParameters(e_params_pre, 0)
+            means_pre, log_sds_pre = means_pre[valid_indices], log_sds_pre[valid_indices]
             kl = kl_divergence(means, np.exp(log_sds), means_pre, np.exp(log_sds_pre))
         else:
             # 无先验迭代，标准正态分布
