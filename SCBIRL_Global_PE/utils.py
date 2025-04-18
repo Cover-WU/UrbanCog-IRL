@@ -59,8 +59,8 @@ def loadModel(who, date = None, prior = True, accumulate = False, tabular = Fals
     model_dir = './model/' + toWhoString(who) + '/'
     
     iter_start_date = load_traveler(who).iter_start_date
-    inputs, targets_action, positions, pe_code, action_dim, state_dim = loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    print(inputs.shape, targets_action.shape, positions.shape, pe_code.shape)
+    inputs, targets_action, positions, action_dim, state_dim = loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    print(inputs.shape, targets_action.shape, positions.shape)
     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
     if tabular: 
         return model
@@ -371,7 +371,7 @@ def plugInDataPair(tc, stateAttribute, model, visitedState):
     '''
     # Preprocess trajectory data and update visited states
     # 每次迭代，高维度数组的轨迹长度都是不一样的，都是本批次（10天内）最长的长度。
-    stateNextState, actionNextAction, poNextpo, peNextpe = processTrajectoryData(tc, stateAttribute, model.s_dim)
+    stateNextState, actionNextAction, poNextpo = processTrajectoryData(tc, stateAttribute, model.s_dim)
     # 这里会更新去过的state
     for t in tc:
         visitedState.update(tuple(item) if isinstance(item, list) else item for item in t.travel_chain)
@@ -380,7 +380,6 @@ def plugInDataPair(tc, stateAttribute, model, visitedState):
     model.inputs = stateNextState
     model.targets = actionNextAction
     model.positions = poNextpo
-    model.pe_code = peNextpe
 
 
 def toWhoString(who: int, digits=9):
