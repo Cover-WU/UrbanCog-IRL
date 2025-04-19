@@ -4,7 +4,6 @@ import jax.numpy as np
 
 from time import time
 from .transformer import *
-from .utils import globalPE
 
 def compress_pe_code_complex(pe_code, target_dim):
     pe_code_real = np.real(pe_code)
