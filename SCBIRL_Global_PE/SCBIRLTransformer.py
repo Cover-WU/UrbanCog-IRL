@@ -91,7 +91,7 @@ class avril:
 
         self.e_params = self.encoder.init(
             self.key, 
-            inputs, positions, self.posicode, self. num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
+            inputs, positions, self.posicode, num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
         )
 
         enc_output = random.normal(self.key, inputs.shape[:-1] + (2,))

@@ -1,6 +1,7 @@
 import haiku as hk
 
 import jax.numpy as np
+import numpy as onp
 
 from time import time
 from .transformer import *
@@ -25,6 +26,44 @@ def compress_pe_code_complex(pe_code, target_dim):
 
     return pe_real_compressed,pe_imag_compressed
 
+
+def globalPE(coords, dimension, seed=43):
+    '''
+    Calculate positional encoding from coordinates:
+    A complex matrix of shape (dimension, 3) is returned.
+    '''
+    x,y = coords
+    Q = np.load('./data/Q_matrix.npy')
+    onp.random.seed(seed)
+    angle_list = onp.random.uniform(0, 2 * onp.pi, dimension) 
+
+    for k in range(1,dimension+1):
+        theta = 2 * onp.pi / 3  
+        R = onp.array([[onp.cos(theta), -onp.sin(theta)], [onp.sin(theta), onp.cos(theta)]])
+        scale_factor = (200 ** (k/dimension))
+        angle = angle_list[k-1]
+        omega_n0 = onp.array([onp.cos(angle), onp.sin(angle)]) * scale_factor
+        omega_n1 = R.dot(omega_n0)
+        omega_n2 = R.dot(omega_n1)
+
+        coords = onp.vstack((x, y))
+        eiw0x = onp.exp(1j * onp.dot(omega_n0,coords))
+        eiw1x = onp.exp(1j * onp.dot(omega_n1,coords))
+        eiw2x = onp.exp(1j * onp.dot(omega_n2,coords))
+
+        g_n = Q.dot(onp.array([eiw0x, eiw1x, eiw2x]))
+        if k == 1:
+            g = onp.transpose(g_n)
+        else:
+            g = onp.concatenate((g, g_n.T), axis=0)
+    return g
+
+
+def generate_random_unitary_matrix(dim, seed=43):
+    onp.random.seed(seed)
+    A = onp.random.randn(dim, dim) + 1j * onp.random.randn(dim, dim)  # 随机复矩阵
+    Q, R = onp.linalg.qr(A)  # QR分解得到酉矩阵
+    return Q
 
 def encoder_model(inputs, positions, posicode, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
     # Combine inputs and pe code

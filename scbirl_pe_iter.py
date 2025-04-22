@@ -188,7 +188,7 @@ if __name__ =="__main__":
     #              1102234, 25679537,102181433]  # Limit to 10 travelers for testing
     
     # # Configure Dask for your hardware
-    # n_workers = 32  # Number of CPU cores
+    # n_workers = min(32, len(who_list))  # Number of CPU cores
     # threads_per_worker = 4  # Threads per worker (128/32 = 4)
     
     # # Train models with batch processing

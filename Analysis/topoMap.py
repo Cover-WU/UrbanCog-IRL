@@ -30,6 +30,8 @@ import SCBIRL_Global_PE.migrationProcess as SIRLP
 import SCBIRL_Global_PE.utils as SIRLU
 from TRAJ_PROCESS.prepareChain import Traveler
 from SCBIRL_Global_PE.utils import UserDataPart
+from SCBIRL_Global_PE.EnDecoder import globalPE
+
 
 from scipy.spatial import distance_matrix
 # note: scipy wasserstein function is too slow.
@@ -62,7 +64,7 @@ def coords2compression(model, coords, depth: int):
     Transform the coordinates to the compressed representation by the model.
     '''
     # given the state return the location codes
-    gc_vectors = [SIRLU.globalPE(coord, depth) for coord in coords]
+    gc_vectors = [globalPE(coord, depth) for coord in coords]
     gc_vectors = np.squeeze(np.array(gc_vectors), axis=-1)
 
     # apply the model to the gc_vectors
@@ -182,7 +184,7 @@ def computeTransitionProb(model, who, date):
         else:
         # get state attribute of this fnid
             state = SIRLU.getStateRow(state_attribute, fnid)
-            pe_code = SIRLU.globalPE(coords,len(state)).flatten()
+            pe_code = globalPE(coords,len(state)).flatten()
             # add three dimension
             pe_code = np.expand_dims(np.expand_dims(np.expand_dims(pe_code, axis=0), axis=0), axis = 0)
             state = np.expand_dims(np.expand_dims(np.expand_dims(state, axis=0), axis=0), axis = 0)
