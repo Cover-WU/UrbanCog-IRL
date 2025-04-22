@@ -147,15 +147,15 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
     if blank:
         built_bench = np.zeros(model.s_dim).reshape(1, -1)
         # average location considering visiting frequency.
-        # locat_bench = np.mean(dataset[:, model.s_dim:], axis=0).reshape(1, -1)
-        locat_bench = np.average(dataset[:, model.s_dim:], weights=dataset_freq, axis=0).reshape(1, -1)
+        locat_bench = np.mean(dataset[:, model.s_dim:], axis=0).reshape(1, -1)
+        # locat_bench = np.average(dataset_uni[:, model.s_dim:], weights=dataset_freq, axis=0).reshape(1, -1)
         # zero_bench = np.zeros(dataset.shape[1]).reshape(1, -1)
         # 基线意味着：建成环境取最小值，位置环境取平均值
         home_bench = np.hstack((built_bench, locat_bench))
     else:
         # 全部取平均值
         home_bench = np.mean(dataset, axis=0).reshape(1, -1) 
-        # home_bench = np.average(dataset, weights=dataset_freq, axis=0).reshape(1, -1)
+        # home_bench = np.average(dataset_uni, weights=dataset_freq, axis=0).reshape(1, -1)
 
     reward_vector = modelPredict(X=dataset_uni, model=model, attribute_type='reward')
     mu = np.average(reward_vector, weights=dataset_freq)
@@ -232,6 +232,8 @@ def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):
         # parallel version
         CPU_COUNT = min(len(date_list), mp.cpu_count() - 1)
         combination = [(date, user, binary_be_vs_loc, blank) for date in reversed(date_list)]
+        # set start method to spawn to avoid the error of fork
+        # mp.set_start_method('spawn', force=True)
         with mp.Pool(CPU_COUNT) as pool:
             shap_dict_values = pool.starmap(modelRewardExplain, combination)
         shap_dict = dict(zip(reversed(date_list), shap_dict_values))
