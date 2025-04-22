@@ -22,8 +22,8 @@ from sklearn.preprocessing import MinMaxScaler
 
 from .transformer import *
 from .EnDecoder import *
-from .utils import *
-from .migrationProcess import *
+import SCBIRL_Global_PE.utils as utils
+
 
 class avril:
     """
