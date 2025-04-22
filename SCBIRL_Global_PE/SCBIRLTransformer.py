@@ -301,7 +301,7 @@ class avril:
         
         # Selecting unpadded value corresopnding to the real travel chain, delete nan value
         # valid_indices = ~np.isnan(td)
-        valid_multi_index = np.any(inputs[:, :, 0, :] != Padding, axis=2)
+        valid_multi_index = np.any(inputs[:, :, 0, :] != utils.Padding, axis=2)
         valid_indices, = np.where(valid_multi_index.flatten())
         td = td[valid_indices]
         means = means[valid_indices]
