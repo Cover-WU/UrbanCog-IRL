@@ -24,7 +24,6 @@ from .transformer import *
 from .EnDecoder import *
 import SCBIRL_Global_PE.utils as utils
 
-
 class avril:
     """
     Class for implementing the AVRIL algorithm of Chan and van der Schaar (2021).
