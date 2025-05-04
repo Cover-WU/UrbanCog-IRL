@@ -233,7 +233,7 @@ def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):
         CPU_COUNT = min(len(date_list), mp.cpu_count() - 1)
         combination = [(date, user, binary_be_vs_loc, blank) for date in reversed(date_list)]
         # set start method to spawn to avoid the error of fork
-        # mp.set_start_method('spawn', force=True)
+        mp.set_start_method('spawn', force=True)
         with mp.Pool(CPU_COUNT) as pool:
             shap_dict_values = pool.starmap(modelRewardExplain, combination)
         shap_dict = dict(zip(reversed(date_list), shap_dict_values))
@@ -299,9 +299,10 @@ if __name__ == '__main__':
     # model_dir = './model/'
     # user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
     # user_list.sort()
+    # user_list = user_list[1:]
     # for user in user_list:
     #     # note: remember to change back
-    #     res = explainOneUser(user, parallel=False, binary_be_vs_loc=False, blank=False)
+    #     res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
     #     with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
     #         pickle.dump(res, f)
     '''

@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 
 def train_model_one_traveler(who: int):
     data_dir = UserDataPart + '{:09d}/'.format(who)
-    model_dir = './model/{:09d}/'.format(who)
+    model_dir = '/root/autodl-tmp/model/{:09d}/'.format(who)
     
     iter_start_date = SIRLU.load_traveler(who).iter_start_date
     # here the `iter_start_date` is a constant defined by utility module.
@@ -29,16 +29,16 @@ def train_model_one_traveler(who: int):
     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
     # model = avril_without_pe(inputs, targets_action,  state_dim, action_dim, state_only=True)
 
-    # # model the model with no prior knowledge, just nearest experience
-    # # if the training is interrupted, we can resume the training from the last date.
-    # PriorKnow.experienceModel(model, data_dir, model_dir, start_date = iter_start_date)
-    # # NOTE: Compute rewards after migration
-    # model_no_prior = copy.deepcopy(model)
-    # # from the tabular rasa, iteratively update the model with accumulated experience
-    # SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, iter_type='prior')
+    # model the model with no prior knowledge, just nearest experience
+    # if the training is interrupted, we can resume the training from the last date.
+    PriorKnow.experienceModel(model, data_dir, model_dir, start_date = iter_start_date)
+    # NOTE: Compute rewards after migration
+    model_no_prior = copy.deepcopy(model)
+    # from the tabular rasa, iteratively update the model with accumulated experience
+    SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, iter_type='prior')
 
     # NOTE: train the model before migration
-    model.train(iters=1000, loss_threshold=0.01)
+    model.train(iters=1000, loss_threshold=0.001)
     model_repo_establishment(model, model_dir)
     model_save_path = model_dir + 'initial_model.pickle'
     model.modelSave(model_save_path)
@@ -200,4 +200,4 @@ if __name__ =="__main__":
     '''
         Terminal Version
     '''
-    train_model_one_traveler(who = 1102234)
+    # train_model_one_traveler(who = 1102234)

@@ -276,7 +276,6 @@ def padSequences(data_list, element_shape, padding_value=Padding):
     # Convert the list of lists of numpy arrays to a higher-dimensional numpy array
     return onp.array(padded_data_list)
 
-
 def loadTrajChain(user_path, type: str, start_date=None):
     '''
     return the training data.

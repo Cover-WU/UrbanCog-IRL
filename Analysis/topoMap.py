@@ -32,7 +32,6 @@ from TRAJ_PROCESS.prepareChain import Traveler
 from SCBIRL_Global_PE.utils import UserDataPart
 from SCBIRL_Global_PE.EnDecoder import globalPE
 
-
 from scipy.spatial import distance_matrix
 # note: scipy wasserstein function is too slow.
 from scipy.stats import wasserstein_distance_nd, lognorm
