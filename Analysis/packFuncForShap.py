@@ -313,7 +313,7 @@ if __name__ == '__main__':
     # user_list.sort()
 
     # user = 1102234
-    # res = explainOneUser(user, parallel=True, binary_be_vs_loc=False)
+    # res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
     # with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
     #     pickle.dump(res, f)
     '''

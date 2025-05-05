@@ -56,7 +56,7 @@ def experienceModel(model_no_prior, dataPath, outputPath, start_date):
         # change
         # weights = [1 / 2 ** (memory_buffer + 1 - i) for i in range(memory_buffer + 1)]
         weights = None
-        model.train(iters=1000, loss_threshold=0.01, weights=weights)
+        model.train(iters=1000, loss_threshold=0.005, weights=weights)
 
         # Save the current model state.
         modelSavePath = modelDir + 'ignorant_model_' + str(iter_training_set[-1].date) + ".pickle"
