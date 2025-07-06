@@ -408,7 +408,7 @@ def clusterLocations(who, date, res_save=True):
     
     return res
 
-def clusterLocationsSimple(who, clusterer='knee', res_save = True):
+def clusterLocationsSimple(who, clusterer='knee'):
     who_string = SIRLU.toWhoString(who) + '/'
     data_dir = UserDataPart + who_string    
     # read the list of location codes 
@@ -465,7 +465,10 @@ def clusterLocationsSimple(who, clusterer='knee', res_save = True):
         aggClusterer = AgglomerativeClustering(None, metric='precomputed', 
                                             distance_threshold=dist_threshold, 
                                             linkage='average')
-        total_dist = 1 / (total_similarity / total_sim_max)
+        total_dist = np.empty_like(total_similarity)
+        mask = total_similarity > 0
+        total_dist[mask] = 1 / (total_similarity[mask] / total_sim_max)
+        total_dist[~mask] = np.inf
         np.fill_diagonal(total_dist, 0)
         total_dist = np.minimum(total_dist, total_dist[~np.isinf(total_dist)].max())
         aggClusterer.fit(total_dist)

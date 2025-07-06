@@ -71,6 +71,7 @@ Thumbs.db
 model/
 product/
 data/
+data_pub/
 backup/
 
 # any history and chat records
