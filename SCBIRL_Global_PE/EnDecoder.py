@@ -106,7 +106,7 @@ def encoder_model(inputs, coords, num_layers, num_heads, num_scale, dff, rate, o
     # flat_pe_codes = np.stack([posicode[coord] for coord in flat_coords], axis=0)
     flat_pe_codes = [globalPE(coord, embedding_dim // (coord_dim + 1)).flatten() 
                      for coord in flat_coords]
-    pe_code = [code.real + code.imag for code in flat_pe_codes]
+    pe_code = np.array([code.real + code.imag for code in flat_pe_codes])
     pe_code = pe_code.reshape(traj_n, pair_n, state_n, embedding_dim)  # reshape back
     x = inputs + pe_code
     
@@ -128,23 +128,20 @@ def create_look_ahead_mask(size):
 
 def q_network_model(inputs, enc_output, coords, num_layers, num_heads, num_scale, dff, rate, output_dim, rng):
     # combine inputs and pe code
-    position_dim = positions.shape[-1]
-    embedding_dim = 2 * (position_dim + 1) * num_scale * num_heads
+    traj_n, pair_n, state_n, coord_dim = coords.shape
+    embedding_dim = 2 * (coord_dim + 1) * num_scale * num_heads
     feature_embedding_layer = hk.Linear(embedding_dim)
     inputs = feature_embedding_layer(inputs)
     
     # Compute global PE
-    traj_n, pair_n, state_n, coord_dim = positions.shape
-    flat_positions = positions.reshape(-1, coord_dim)
-    pe_list = []
-    for coords in flat_positions:
-        pe = globalPE(coords, embedding_dim//3)  # shape: (dimension, 3)
-        pe_list.append(pe.flatten())               # shape: (dimension * 3,) == embedding_dim
-    pe_array = np.stack(pe_list, axis=0)  # shape: (traj_n * pair_n * 2, embedding_dim)
-    pe_code = pe_array.reshape(traj_n, pair_n, state_n, embedding_dim)  # reshape back
-
-    pe_real_code,pe_imag_code = np.real(pe_code), np.imag(pe_code)
-    x = inputs + pe_real_code + pe_imag_code
+    flat_coords = coords.reshape(-1, coord_dim).tolist()
+    flat_coords = [tuple(coord) for coord in flat_coords]
+    # flat_pe_codes = np.stack([posicode[coord] for coord in flat_coords], axis=0)
+    flat_pe_codes = [globalPE(coord, embedding_dim // (coord_dim + 1)).flatten() 
+                     for coord in flat_coords]
+    pe_code = np.array([code.real + code.imag for code in flat_pe_codes])
+    pe_code = pe_code.reshape(traj_n, pair_n, state_n, embedding_dim)  # reshape back
+    x = inputs + pe_code
     
     # Initialize transformer decoder layer
     transformer_decoder_layers = [TransformerDecoderLayer(embedding_dim, num_heads, dff, use_rotation=True, rate=rate) 

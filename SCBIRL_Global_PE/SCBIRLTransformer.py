@@ -92,12 +92,12 @@ class avril:
 
         self.e_params = self.encoder.init(
             self.key, 
-            inputs, self.coords, self.posicode, num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
+            inputs, self.coords, num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
         )
 
         enc_output = random.normal(self.key, inputs.shape[:-1] + (2,))
         self.q_params = self.q_network.init(
-            self.key, inputs, enc_output, self.coords, self.posicode, num_layers, num_heads, num_scale, dff, rate, action_dim, self.key
+            self.key, inputs, enc_output, self.coords, num_layers, num_heads, num_scale, dff, rate, action_dim, self.key
         )
 
         self.params = (self.e_params, self.q_params)
@@ -129,7 +129,7 @@ class avril:
         if self.coords_utm_mapping is not None:
             self._update_coords_utm_mapping(value)
             position_array = value.reshape(-1, value.shape[-1])
-            position_list = [tuple(pos) for pos in position_array]
+            position_list = [tuple(pos.tolist()) for pos in position_array]
             coords_list = [self.coords_utm_mapping[pos] for pos in position_list]
             coords_from_value = np.array(coords_list).reshape(value.shape)
             return coords_from_value
@@ -159,7 +159,7 @@ class avril:
         
         value_flat = value.reshape(-1, 2)
         # turn the value_flat to a set of lon-lat tuple
-        value_set = set(tuple(pos) for pos in value_flat)
+        value_set = set(tuple(pos.tolist()) for pos in value_flat)
         # find the unrecorded coords
         unrecorded_coords = [coord for coord in value_set if coord not in self.coords_utm_mapping]
         # if there are new coords, compute the PE code for them
@@ -167,31 +167,20 @@ class avril:
             mapping_to_be_updated = utils.create_coords_utm_mapping(pos_list=unrecorded_coords)
             self.coords_utm_mapping.update(mapping_to_be_updated)
         
+    # @property
+    # def posicode(self):
+    #     return self._pe_code_mapping
     
-    
-    @property
-    def positions(self):
-        return self._positions
-    
-    @positions.setter
-    def positions(self, value):
-        self._positions = value
-        self._update_posicode(value)
-    
-    @property
-    def posicode(self):
-        return self._pe_code_mapping
-    
-    def _update_posicode(self, value):
-        # unique the coords and find the unrecorded coords
-        updated_coords = [tuple(p) for p in onp.unique(value.reshape(-1, value.shape[-1]), axis=0)]
-        incoming_coords = [p for p in updated_coords if p not in self._pe_code_mapping]
-        # if there are new coords, compute the PE code for them
-        if incoming_coords:
-            # update the pe_code dictionary
-            pe_codes = [globalPE(coords, 2 * self.num_heads * self.num_scale).flatten() for coords in incoming_coords]
-            pe_codes = [pe_code.real + pe_code.imag for pe_code in pe_codes]
-            self._pe_code_mapping.update(dict(zip(incoming_coords, pe_codes)))
+    # def _update_posicode(self, value):
+    #     # unique the coords and find the unrecorded coords
+    #     updated_coords = [tuple(p) for p in onp.unique(value.reshape(-1, value.shape[-1]), axis=0)]
+    #     incoming_coords = [p for p in updated_coords if p not in self._pe_code_mapping]
+    #     # if there are new coords, compute the PE code for them
+    #     if incoming_coords:
+    #         # update the pe_code dictionary
+    #         pe_codes = [globalPE(coords, 2 * self.num_heads * self.num_scale).flatten() for coords in incoming_coords]
+    #         pe_codes = [pe_code.real + pe_code.imag for pe_code in pe_codes]
+    #         self._pe_code_mapping.update(dict(zip(incoming_coords, pe_codes)))
     
     def modelSave(self, model_save_path):
         with open(model_save_path,'wb') as f:

@@ -27,7 +27,8 @@ def train_model_one_traveler(who: int):
     print(inputs.shape, targets_action.shape, positions.shape)
     # tabular rasa model
     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
-    # model = avril_without_pe(inputs, targets_action,  state_dim, action_dim, state_only=True)
+    mapping_dict = SIRLU.create_coords_utm_mapping(who)
+    model.set_coords_utm_mapping(mapping_dict)
 
     # model the model with no prior knowledge, just nearest experience
     # if the training is interrupted, we can resume the training from the last date.
@@ -159,9 +160,9 @@ if __name__ =="__main__":
     '''
         Iteration Version
     '''
-    # who_list = [1102234]
-    # for who in who_list:
-    #     train_model_one_traveler(who = who)
+    who_list = [1102234]
+    for who in who_list:
+        train_model_one_traveler(who = who)
 
     '''
         Parallel Version

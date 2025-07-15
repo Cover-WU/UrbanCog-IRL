@@ -12,6 +12,7 @@ import os
 from collections import namedtuple
 from datetime import date, timedelta, datetime
 from typing import List
+import SCBIRL_Global_PE.SCBIRLTransformer as SIRLT
 
 TravelData = namedtuple('TravelChain', ['date', 'travel_chain','id_chain','fnid_chain'])
 Traveler = namedtuple('Traveler', ['who', 'visit_date', 'iter_start_date'])
