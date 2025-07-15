@@ -23,8 +23,8 @@ def train_model_one_traveler(who: int):
     
     iter_start_date = SIRLU.load_traveler(who).iter_start_date
     # here the `iter_start_date` is a constant defined by utility module.
-    inputs, targets_action, positions, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    print(inputs.shape, targets_action.shape, positions.shape, pe_code.shape)
+    inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    print(inputs.shape, targets_action.shape, positions.shape)
     # tabular rasa model
     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
     # model = avril_without_pe(inputs, targets_action,  state_dim, action_dim, state_only=True)
@@ -38,7 +38,7 @@ def train_model_one_traveler(who: int):
     SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, iter_type='prior')
 
     # NOTE: train the model before migration
-    model.train(iters=1000, loss_threshold=0.01)
+    model.train(iters=1000, loss_threshold=0.001)
     model_repo_establishment(model, model_dir)
     model_save_path = model_dir + 'initial_model.pickle'
     model.modelSave(model_save_path)
@@ -179,23 +179,23 @@ if __name__ =="__main__":
     '''
         Professional Parallel Version
     '''
-    file_list = os.listdir(UserDataPart)
-    # Example who_list
-    # who_list = [int(pid) for pid in file_list]
-    who_list = [68058890, 10013454, 58272403,
-                 6945721, 71209087, 93854949,
-                82455786, 58124481, 54636959,
-                 1102234, 25679537,102181433]  # Limit to 10 travelers for testing
+    # file_list = os.listdir(UserDataPart)
+    # # Example who_list
+    # # who_list = [int(pid) for pid in file_list]
+    # who_list = [68058890, 10013454, 58272403,
+    #              6945721, 71209087, 93854949,
+    #             82455786, 58124481, 54636959,
+    #              1102234, 25679537,102181433]  # Limit to 10 travelers for testing
     
-    # Configure Dask for your hardware
-    n_workers = 32  # Number of CPU cores
-    threads_per_worker = 4  # Threads per worker (128/32 = 4)
+    # # Configure Dask for your hardware
+    # n_workers = min(32, len(who_list))  # Number of CPU cores
+    # threads_per_worker = 4  # Threads per worker (128/32 = 4)
     
-    # Train models with batch processing
-    results = train_model_batch(
-        who_list,
-        batch_size=n_workers  # Adjust based on memory requirements
-    )
+    # # Train models with batch processing
+    # results = train_model_batch(
+    #     who_list,
+    #     batch_size=n_workers  # Adjust based on memory requirements
+    # )
     
     '''
         Terminal Version

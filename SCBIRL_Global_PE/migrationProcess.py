@@ -6,9 +6,7 @@ import os
 import pandas as pd
 from tqdm import tqdm
 
-from .transformer import *
-from .utils import *
-from .EnDecoder import *
+from .utils import getActionDim, loadJsonFile, loadTravelDataFromDicts, preprocessStateAttributes, plugInDataPair
 from scipy.special import softmax
 
 def getComputeFunction(model, attribute_type):
@@ -116,7 +114,7 @@ def afterMigrt(model, dataPath, outputPath, start_date, iter_type):
         # change
         # weights = [1 / 2 ** (memory_buffer - i) for i in range(memory_buffer)]
         weights = None
-        model.train(iters=1000,loss_threshold=0.01, weights=weights)
+        model.train(iters=1000, loss_threshold=0.005, weights=weights)
 
         # Save the current model state.
         modelSavePath = modelDir + model_tag + '_model_' + str(iter_training_set[-1].date) + ".pickle"

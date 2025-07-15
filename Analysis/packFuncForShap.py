@@ -147,15 +147,15 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
     if blank:
         built_bench = np.zeros(model.s_dim).reshape(1, -1)
         # average location considering visiting frequency.
-        # locat_bench = np.mean(dataset[:, model.s_dim:], axis=0).reshape(1, -1)
-        locat_bench = np.average(dataset[:, model.s_dim:], weights=dataset_freq, axis=0).reshape(1, -1)
+        locat_bench = np.mean(dataset[:, model.s_dim:], axis=0).reshape(1, -1)
+        # locat_bench = np.average(dataset_uni[:, model.s_dim:], weights=dataset_freq, axis=0).reshape(1, -1)
         # zero_bench = np.zeros(dataset.shape[1]).reshape(1, -1)
         # 基线意味着：建成环境取最小值，位置环境取平均值
         home_bench = np.hstack((built_bench, locat_bench))
     else:
         # 全部取平均值
         home_bench = np.mean(dataset, axis=0).reshape(1, -1) 
-        # home_bench = np.average(dataset, weights=dataset_freq, axis=0).reshape(1, -1)
+        # home_bench = np.average(dataset_uni, weights=dataset_freq, axis=0).reshape(1, -1)
 
     reward_vector = modelPredict(X=dataset_uni, model=model, attribute_type='reward')
     mu = np.average(reward_vector, weights=dataset_freq)
@@ -230,9 +230,11 @@ def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):
             shap_dict[date] = modelRewardExplain(date, who=user, binary_be_vs_loc=binary_be_vs_loc, blank=blank)
     else:
         # parallel version
-        CPU_COUNT = len(date_list)
+        CPU_COUNT = min(len(date_list), mp.cpu_count() - 1)
         combination = [(date, user, binary_be_vs_loc, blank) for date in reversed(date_list)]
-        with mp.get_context('spawn').Pool(CPU_COUNT) as pool:
+        # set start method to spawn to avoid the error of fork
+        mp.set_start_method('spawn', force=True)
+        with mp.Pool(CPU_COUNT) as pool:
             shap_dict_values = pool.starmap(modelRewardExplain, combination)
         shap_dict = dict(zip(reversed(date_list), shap_dict_values))
     return shap_dict
@@ -294,14 +296,15 @@ if __name__ == '__main__':
     '''
     Half Parallel Version
     '''
-    model_dir = './model/'
-    user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
-    user_list.sort()
-    for user in user_list:
-        # note: remember to change back
-        res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
-        with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
-            pickle.dump(res, f)
+    # model_dir = './model/'
+    # user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
+    # user_list.sort()
+    # user_list = user_list[1:]
+    # for user in user_list:
+    #     # note: remember to change back
+    #     res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
+    #     with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
+    #         pickle.dump(res, f)
     '''
     By Hand
     '''
@@ -310,25 +313,26 @@ if __name__ == '__main__':
     # user_list.sort()
 
     # user = 1102234
-    # res = explainOneUser(user, parallel=True, binary_be_vs_loc=False)
+    # res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
     # with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
     #     pickle.dump(res, f)
     '''
     Inspect the baseline.
     '''
-    model_dir = './model/'
-    user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
-    user_list.sort()
-    reward_dict = dict()
-    for user in user_list:
-        date_list = modelDateOfUser(user)
-        for date in date_list:
-            reward_dict[(user, date)] = modelRewardBaselineCalculation(date, who=user)
-            with open('./product/reward_res.pkl', 'wb') as f:
-                    pickle.dump(reward_dict, f)
+    # model_dir = './model/'
+    # user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
+    # user_list.sort()
+    # reward_dict = dict()
+    # for user in user_list:
+    #     date_list = modelDateOfUser(user)
+    #     for date in date_list:
+    #         reward_dict[(user, date)] = modelRewardBaselineCalculation(date, who=user)
+    #         with open('./product/reward_res.pkl', 'wb') as f:
+    #                 pickle.dump(reward_dict, f)
     '''
     Test area
     '''
     # shap_dict = dict()
     # date = 20230507
     # shap_dict[date] = modelRewardExplain(date, who=1102234)
+    pass

@@ -30,6 +30,7 @@ import SCBIRL_Global_PE.migrationProcess as SIRLP
 import SCBIRL_Global_PE.utils as SIRLU
 from TRAJ_PROCESS.prepareChain import Traveler
 from SCBIRL_Global_PE.utils import UserDataPart
+from SCBIRL_Global_PE.EnDecoder import globalPE
 
 from scipy.spatial import distance_matrix
 # note: scipy wasserstein function is too slow.
@@ -51,7 +52,7 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 import networkx as nx
 from kneed import KneeLocator
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import AgglomerativeClustering, HDBSCAN
 from shapely.geometry import Point
 from geopy.distance import geodesic
 from numba import jit, prange
@@ -62,7 +63,7 @@ def coords2compression(model, coords, depth: int):
     Transform the coordinates to the compressed representation by the model.
     '''
     # given the state return the location codes
-    gc_vectors = [SIRLU.globalPE(coord, depth) for coord in coords]
+    gc_vectors = [globalPE(coord, depth) for coord in coords]
     gc_vectors = np.squeeze(np.array(gc_vectors), axis=-1)
 
     # apply the model to the gc_vectors
@@ -182,7 +183,7 @@ def computeTransitionProb(model, who, date):
         else:
         # get state attribute of this fnid
             state = SIRLU.getStateRow(state_attribute, fnid)
-            pe_code = SIRLU.globalPE(coords,len(state)).flatten()
+            pe_code = globalPE(coords,len(state)).flatten()
             # add three dimension
             pe_code = np.expand_dims(np.expand_dims(np.expand_dims(pe_code, axis=0), axis=0), axis = 0)
             state = np.expand_dims(np.expand_dims(np.expand_dims(state, axis=0), axis=0), axis = 0)
@@ -407,101 +408,85 @@ def clusterLocations(who, date, res_save=True):
     
     return res
 
-def clusterLocationsDeprec(who, date, res_save = True):
+def clusterLocationsSimple(who, clusterer='knee'):
     who_string = SIRLU.toWhoString(who) + '/'
-    data_dir = UserDataPart + who_string
-    model_dir = './model/' + who_string
-    save_dir = './product/' + who_string
-    iter_start_date = SIRLU.load_traveler(who).iter_start_date
-
-    # Paths for data files
-    full_trajectory_path = data_dir + 'all_traj.json'
-
-    if date >= iter_start_date:
-        params_path = model_dir + f'evolution_model/iterated_model_{date:d}.pickle'
-    else:
-        params_path = model_dir + f'initial_model.pickle'
-    
-    inputs, targets_action, positions, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    print(inputs.shape,targets_action.shape,pe_code.shape)
-    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
-
-    # model.loadParams(model_dir + 'params_transformer_pe.pickle')
-    model.loadParams(params_path)
-    
-    MAXCORES = cpu_count() - 1
-
+    data_dir = UserDataPart + who_string    
     # read the list of location codes 
     id_coords_mapping = SIRLU.load_id_coords_mapping(who)
+    id_tempo_mapping = SIRLU.load_id_tempo_mapping(who)
     id_coorders_mapping = dict(sorted(id_coords_mapping.items()))
-
-    # fulfill the representation by function
-    pe_compressed = coords2compression(model, id_coorders_mapping.values(), depth=state_dim)
-    print(pe_compressed.shape)
-
-    res = computeTransitionProb(model, who, date)
-    transitionProbs, coordsIdx = np.array(res[0]), res[1]
-
-    # Edit the transiton matrix and coordinates to remove the non-visited locations.
-    transitionProbsEdit, id_coorders_mapping_edit = removeNonVisited(transitionProbs, id_coorders_mapping)
-    print("The shape of the transition matrix is: ", transitionProbsEdit.shape)
-    # compute the stationary distribution
-    stationary = computeTransLimit(transitionProbsEdit)
-
-    # distance computation
-    num_locs = len(id_coorders_mapping_edit)
-    print("There are {} locations in total.".format(num_locs))
-    # compute spatial distance matrix
-    pe_compressed_filtered = pe_compressed[list(id_coorders_mapping_edit.keys()), :]
-    spatial_dist = distance_matrix(pe_compressed_filtered, pe_compressed_filtered, p=2)
-    print("Spatial distance computation finished.")
-
-    # compute the transition relation distinction between points
-    # compute the combination
-    combine_pairs = [i for i in combinations(range(num_locs), 2)]
-
-    # compute the wasserstein distance, based on spatial distribution computed before
-    with Pool(processes=MAXCORES) as pool:
-        results = pool.starmap(compute_wasserstein, [(pe_compressed_filtered, transitionProbsEdit, i, j, 'pot', spatial_dist) for i, j in combine_pairs])
+    num_locs = len(id_coorders_mapping)
     
-    # fill the upper triangular matrix
-    triu_idx = np.triu_indices(num_locs, 1)
-    tril_idx = np.tril_indices(num_locs, 0)
-    # create a numpy 2D array to record the wasserstein distance between each location
-    social_dist = np.empty((num_locs, num_locs))
-    social_dist[triu_idx] = results
-    social_dist[tril_idx] = 0.0
-    social_dist = social_dist + social_dist.T   
-    print("Social distance computation finished.")
+    coords_list = list(id_coorders_mapping.values())
+    spatial_dist = compute_geodistace(coords_list)
+    logging.info("Geographic distance computation finished.")
+
+    # Compute the temporal distribution
+    angular_distribution = np.array([id_tempo_mapping[id] for id in id_coorders_mapping])
+    slot_num = 24 * 4
+    angular_cost = np.empty((slot_num, slot_num))
+    init_cost = np.roll(np.abs(np.arange(slot_num) - slot_num // 2), slot_num // 2)
+    for i in range(slot_num):
+        angular_cost[i] = np.roll(init_cost, i)
+    angular_cost /= 4
+    temporal_dist = compute_wasserstein_matrix_numba(angular_distribution, angular_cost)
+    logging.info("Temporal distance computation finished.")
 
     # compute the total matrix
-    total_dist = spatial_dist * social_dist
-    # total_dist = np.exp(spatial_dist) * social_dist
+    # compute the similarity
+    eps = 1e-12
+    positive_smooth = lambda m: np.where(m <= 0, np.min(m[m > 0]), m)
+    bandwidth_in_kilometers = 1.0
+    
+    # standardize the social distance matrix to fit standard log-normal distribution
+    temporal_dist = positive_smooth(temporal_dist)
+    
+    # spatial similarity is computed by a gaussian kernel
+    spatial_similarity = np.exp(-spatial_dist ** 2 / (2 * bandwidth_in_kilometers ** 2))
+    # According to the 3 sigma rule, the left rare tail point for standard log-normal distribution is exp(-3)
+    # then its corresponding quotient is eps(3) near to 20
+    temporal_similarity = np.maximum(-np.log(temporal_dist / 12), eps)
+    total_similarity = spatial_similarity * temporal_similarity
+    total_sim = total_similarity[np.triu_indices_from(total_similarity, k=1)]
+    total_sim_max = np.max(total_sim)   
+    if clusterer == 'knee':
+        total_sim = total_sim / total_sim_max
+        # 对相似度值进行排序
+        total_sim = np.sort(total_sim)
 
-    # calculate the distribution of the distance, start from 0.
-    spatial_distrib_params = lognorm.fit(spatial_dist[triu_idx], floc=0.0)
-    social_distrib_params = lognorm.fit(social_dist[triu_idx], floc=0.0)
-    # determine the clustering threshold by accounting for the distribution
-    threshold = clusterThres(spatial_distrib_params, social_distrib_params)
+        # 计算CDF（使用均匀分布）
+        cdf = np.arange(1, len(total_sim) + 1) / len(total_sim)
+        
+        # 使用kneedle算法找到knee point
+        knee_locator = KneeLocator(total_sim, cdf, curve="concave", direction="increasing")
+        sim_threshold = knee_locator.knee
+        dist_threshold = 1 / (sim_threshold)
+        # clustering the locations by agglomerative clustering
+        aggClusterer = AgglomerativeClustering(None, metric='precomputed', 
+                                            distance_threshold=dist_threshold, 
+                                            linkage='average')
+        total_dist = np.empty_like(total_similarity)
+        mask = total_similarity > 0
+        total_dist[mask] = 1 / (total_similarity[mask] / total_sim_max)
+        total_dist[~mask] = np.inf
+        np.fill_diagonal(total_dist, 0)
+        total_dist = np.minimum(total_dist, total_dist[~np.isinf(total_dist)].max())
+        aggClusterer.fit(total_dist)
+        
+        # get the cluster labels
+        cluster_labels = aggClusterer.labels_
+    elif clusterer == 'hdbscan':
+        affinity = (total_similarity / total_sim_max)
+        clusterer = HDBSCAN(min_cluster_size=2, min_samples=2, metric='precomputed')
+        disimilarity = 1 - affinity
+        np.fill_diagonal(disimilarity, 0)
+        cluster_labels = clusterer.fit_predict(disimilarity)
 
-    # clustering the locations by agglomerative clustering
-    aggClusterer = AgglomerativeClustering(None, metric='precomputed', distance_threshold=threshold,
-        linkage='complete' )
-    aggClusterer.fit(total_dist)
-
-    # get the cluster labels
-    cluster_labels = aggClusterer.labels_
     # get the number of clusters
     num_clusters = len(np.unique(cluster_labels))
     print("There are {} clusters in total.".format(num_clusters))
     
-    # return the result
-    res = (transitionProbsEdit, id_coorders_mapping_edit, stationary, cluster_labels)
-    
-    if res_save:
-        topoResSave(res, who, date)
-    
-    return res
+    return cluster_labels
 
 def cogTopoGraph(who, date):
     transitionProbsEdit, id_coorders_mapping_edit, stationary, cluster_labels = clusterLocations(who, date)

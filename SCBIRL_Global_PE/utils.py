@@ -12,7 +12,6 @@ import os
 from collections import namedtuple
 from datetime import date, timedelta, datetime
 from typing import List
-from SCBIRL_Global_PE import SCBIRLTransformer as SIRLT
 
 TravelData = namedtuple('TravelChain', ['date', 'travel_chain','id_chain','fnid_chain'])
 Traveler = namedtuple('Traveler', ['who', 'visit_date', 'iter_start_date'])
@@ -50,7 +49,7 @@ def loadTravelChainAll(who: int):
     return chains_loaded
     
 
-def loadModel(who, date = None, prior = True, accumulate = False, tabular = False):
+def loadModel(who, date = None, prior = True, accumulate = False, tabular = False, use_utm=True):
     '''
         Load the model from the model directory.
         Must correctly set the directory at first.
@@ -59,9 +58,17 @@ def loadModel(who, date = None, prior = True, accumulate = False, tabular = Fals
     model_dir = './model/' + toWhoString(who) + '/'
     
     iter_start_date = load_traveler(who).iter_start_date
-    inputs, targets_action, positions, pe_code, action_dim, state_dim = loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    print(inputs.shape, targets_action.shape, positions.shape, pe_code.shape)
+    inputs, targets_action, positions, action_dim, state_dim = loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    print(inputs.shape, targets_action.shape, positions.shape)
+    
+    # 创建模型
     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
+    
+    # 如果需要使用UTM坐标，创建经纬度到UTM坐标的映射并设置
+    if use_utm:
+        coords_utm_mapping = create_coords_utm_mapping(who)
+        model.set_coords_utm_mapping(coords_utm_mapping)
+    
     if tabular: 
         return model
     
@@ -124,8 +131,6 @@ def coords2UTMmeters(coords: np.ndarray):
             x, y = lon, lat
         else:
             x, y = transformer.transform(lon, lat)
-            # turn to km.
-            x, y = x / 1e3, y / 1e3
         utm_reshape.append([x, y])
     utm_reshape = np.array(utm_reshape)
     utm = utm_reshape.reshape(coords.shape)
@@ -176,36 +181,32 @@ def processTrajectoryData(traj_chains, state_attribute, s_dim):
     state_next_state = []
     action_next_action = []
     positions_next_positions = [] 
-    pe_next_pe = []
 
     for tc in traj_chains:
-        sns_chain, ana_chain, ponpo_chain, pnp_chain = [], [], [], []
+        sns_chain, ana_chain, ponpo_chain = [], [], []
         for t in range(len(tc.travel_chain)):
             # Get the final destination in the travel chain
             # destination = tc.travel_chain[-1]
             # s_n_s: [2, s_dim]的数组，第一行是当前状态的特征，第二行是下一个状态的特征
             # a_n_a: [2, 1]的数组，第一行是当前动作，第二行是下一个动作，编号都是状态码
             # p_n_p: [2, nlevel*3]的数组，第一行是当前状态的grid code，第二行是下一个状态的grid code
-            s_n_s, a_n_a, po_n_po, p_n_p = processSingleTrajectory(tc, t, state_attribute, s_dim)
+            s_n_s, a_n_a, po_n_po = processSingleTrajectory(tc, t, state_attribute, s_dim)
 
             # Append the results to respective lists
             sns_chain.append(s_n_s)
             ana_chain.append(a_n_a)
             ponpo_chain.append(po_n_po)
-            pnp_chain.append(p_n_p)
         state_next_state.append(sns_chain)
         action_next_action.append(ana_chain)
         positions_next_positions.append(ponpo_chain)
-        pe_next_pe.append(pnp_chain)
     # pad sequence to the same length
     # 把traj_len填充到最大的长度，变为max_traj_len, 其余值默认为-999填充
     # todo: 考虑是否要长度对齐
     state_next_state = padSequences(state_next_state,s_n_s.shape) 
     action_next_action = padSequences(action_next_action,a_n_a.shape,padding_value=-1)
     positions_next_positions = padSequences(positions_next_positions,po_n_po.shape)
-    pe_next_pe = padSequences(pe_next_pe,p_n_p.shape)
 
-    return np.array(state_next_state), np.array(action_next_action), np.array(positions_next_positions), np.array(pe_next_pe)
+    return np.array(state_next_state), np.array(action_next_action), np.array(positions_next_positions)
 
 def processSingleTrajectory(tc, t, state_attribute, s_dim):
     '''
@@ -225,15 +226,6 @@ def processSingleTrajectory(tc, t, state_attribute, s_dim):
         p_n_p[0] = this_state  # this_state应该是[lat, lon]格式
         p_n_p[1] = next_state
         
-        # note: 这一块和之前cann版本代码不同
-        # get global positional encoding of state
-        this_pe = globalPE(this_state,s_dim)
-        next_pe = globalPE(next_state,s_dim)
-        # save to s_grid_s
-        s_pe_s = onp.empty((2, s_dim*3), dtype=onp.complex_) # Each dimensional grid encoding has three component
-        s_pe_s[0, :] = this_pe.flatten()
-        s_pe_s[1, :] = next_pe.flatten()
-
         # action
         a_n_a = onp.zeros((2, 1))   
         a_n_a[0] = tc.id_chain[t + 1]
@@ -249,21 +241,12 @@ def processSingleTrajectory(tc, t, state_attribute, s_dim):
         p_n_p = onp.zeros((2, 2))
         p_n_p[0] = this_state
         p_n_p[1] = Padding
-        
-        # get grid code of state and destination,dim(8,128,128)
-        this_pe = globalPE(this_state,s_dim)
-        # next_pe = onp.zeros_like(this_pe)
-        # save to s_grid_s
-        s_pe_s = onp.empty((2, s_dim*3), dtype=onp.complex_)
-        s_pe_s[0, :] = this_pe.flatten()
-        # s_pe_s[1, :] = next_pe.flatten()
-        s_pe_s[1, :] = Padding
-        
+                
         a_n_a = onp.zeros((2, 1))
         a_n_a[0] = -1
         a_n_a[1] = -1
 
-    return s_n_s, a_n_a, p_n_p, s_pe_s
+    return s_n_s, a_n_a, p_n_p
 
 def padSequences(data_list, element_shape, padding_value=Padding):
     """
@@ -298,68 +281,6 @@ def padSequences(data_list, element_shape, padding_value=Padding):
     # Convert the list of lists of numpy arrays to a higher-dimensional numpy array
     return onp.array(padded_data_list)
 
-def globalPE(coords, dimension,seed=43):
-    '''
-    Calculate positional encoding from coordinates:
-    A complex matrix of shape (dimension, 3) is returned.
-    '''
-    x,y = coords
-    Q = np.load('./data/Q_matrix.npy')
-    onp.random.seed(seed)
-    angle_list = onp.random.uniform(0, 2 * onp.pi, dimension) 
-
-    for k in range(1,dimension+1):
-        theta = 2 * onp.pi / 3  
-        R = onp.array([[onp.cos(theta), -onp.sin(theta)], [onp.sin(theta), onp.cos(theta)]])
-        scale_factor = (1000**-(k/dimension))
-        angle = angle_list[k-1]
-        omega_n0 = onp.array([onp.cos(angle), onp.sin(angle)]) * scale_factor
-        omega_n1 = R.dot(omega_n0)
-        omega_n2 = R.dot(omega_n1)
-
-        coords = onp.vstack((x, y))
-        eiw0x = onp.exp(1j * onp.dot(omega_n0,coords))
-        eiw1x = onp.exp(1j * onp.dot(omega_n1,coords))
-        eiw2x = onp.exp(1j * onp.dot(omega_n2,coords))
-
-        g_n = Q.dot(onp.array([eiw0x, eiw1x, eiw2x]))
-        if k == 1:
-            g = onp.transpose(g_n)
-        else:
-            g = onp.concatenate((g, g_n.T), axis=0)
-    return g
-
-def globalPEnew(coords, dimension, seed=42):
-    '''
-    Calculate positional encoding from coordinates:
-    A complex matrix of shape (dimension, 3) is returned.
-    '''
-    x,y = coords
-    random_key = random.PRNGKey(seed)
-    angle_list = random.uniform(random_key, shape=(dimension,), minval=0, maxval=2 * np.pi) 
-    
-    for k in range(1,dimension+1):
-        theta = 2 * np.pi / 3  
-        R = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
-        scale_factor = (1000 ** -(k/dimension))
-        angle = angle_list[k-1]
-        omega_n0 = np.array([np.cos(angle), np.sin(angle)]) * scale_factor
-        omega_n1 = R.dot(omega_n0)
-        omega_n2 = R.dot(omega_n1)
-
-        coords = np.vstack((x, y))
-        eiw0x = np.exp(1j * np.dot(omega_n0,coords))
-        eiw1x = np.exp(1j * np.dot(omega_n1,coords))
-        eiw2x = np.exp(1j * np.dot(omega_n2,coords))
-
-        g_n = Q.dot(np.array([eiw0x, eiw1x, eiw2x]))
-        if k == 1:
-            g = np.transpose(g_n)
-        else:
-            g = np.concatenate((g, g_n.T), axis=0)
-    return g
-
-
 def loadTrajChain(user_path, type: str, start_date=None):
     '''
     return the training data.
@@ -381,11 +302,11 @@ def loadTrajChain(user_path, type: str, start_date=None):
     full_feature_path = user_path + 'all_traj_feature.csv'
     state_attribute, s_dim = preprocessStateAttributes(full_feature_path)
     # 注意，这里建成环境做了归一化，但是位置编码是没有的
-    state_next_state, action_next_action,positions_next_positions, grid_next_grid= processTrajectoryData(chains_loaded, state_attribute, s_dim)
+    state_next_state, action_next_action, positions_next_positions= processTrajectoryData(chains_loaded, state_attribute, s_dim)
     # 这里的state_next_state是一个四维数组，第一维是轨迹条数，第二维是轨迹最大长度（即每条轨迹pair数），第三维是状态数（2），第四维是特征数
     # action_next_action是一个四维数组，第一维是轨迹条数，第二维是轨迹最大长度（即每条轨迹pair数），第三维是状态数（2），第四维是虚假轴
     # 第三个输出grid_next_grid是四维数组, dim(num_traj, max_traj_len, 2, nlevel)
-    return state_next_state, action_next_action, positions_next_positions, grid_next_grid, a_dim, s_dim
+    return state_next_state, action_next_action, positions_next_positions, a_dim, s_dim
     
 def plugInDataPair(tc, stateAttribute, model, visitedState):
     ''' 
@@ -393,7 +314,7 @@ def plugInDataPair(tc, stateAttribute, model, visitedState):
     '''
     # Preprocess trajectory data and update visited states
     # 每次迭代，高维度数组的轨迹长度都是不一样的，都是本批次（10天内）最长的长度。
-    stateNextState, actionNextAction, poNextpo, peNextpe = processTrajectoryData(tc, stateAttribute, model.s_dim)
+    stateNextState, actionNextAction, poNextpo = processTrajectoryData(tc, stateAttribute, model.s_dim)
     # 这里会更新去过的state
     for t in tc:
         visitedState.update(tuple(item) if isinstance(item, list) else item for item in t.travel_chain)
@@ -402,7 +323,6 @@ def plugInDataPair(tc, stateAttribute, model, visitedState):
     model.inputs = stateNextState
     model.targets = actionNextAction
     model.positions = poNextpo
-    model.pe_code = peNextpe
 
 
 def toWhoString(who: int, digits=9):
@@ -576,6 +496,53 @@ def normalize(vals):
     min_val = np.min(vals)
     max_val = np.max(vals)
     return (vals - min_val) / (max_val - min_val)
+
+def create_coords_utm_mapping(who: int = None, pos_list=None):
+    """
+    创建经纬度到UTM坐标的映射字典
+    
+    参数:
+    -----
+    who : int, optional
+        用户ID，如果提供，将从该用户的轨迹中提取所有坐标
+    pos_list : list, optional
+        经纬度坐标列表，如果提供，将直接使用这些坐标创建映射
+        
+    返回:
+    -----
+    dict
+        经纬度坐标(tuple)到UTM坐标(tuple)的映射字典
+    """
+    # 如果提供了用户ID，从用户轨迹中提取所有坐标
+    if who is not None and pos_list is None:
+        traj_chains = loadTravelChainAll(who)
+        pos_set = set()
+        for tc in traj_chains:
+            for coord in tc.travel_chain:
+                pos_set.add(tuple(coord))
+        pos_list = list(pos_set)
+    
+    # 如果提供了坐标列表，直接使用
+    if pos_list is not None:
+        # 创建映射字典
+        coords_utm_mapping = {}
+        crs_src = pyproj.CRS('EPSG:4326')
+        crs_tgt = pyproj.CRS('EPSG:32650')
+        transformer = pyproj.Transformer.from_crs(crs_src, crs_tgt, always_xy=True)
+        
+        for position in pos_list:
+            lon, lat = position
+            if abs(lon) > 180 or abs(lat) > 90:
+                # 无效坐标，保持原值
+                x, y = lon, lat
+            else:
+                # 转换为UTM坐标（单位：千米）
+                x, y = transformer.transform(lon, lat)
+            coords_utm_mapping[position] = (x, y)
+        
+        return coords_utm_mapping
+    
+    return {}
 
 if __name__ == "__main__":
     path = f'./data/before_migrt.json'
