@@ -291,7 +291,9 @@ def clusterLocations(who, date, res_save=True):
     
     inputs, targets_action, positions, pe_code, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
     logging.debug(inputs.shape,targets_action.shape,pe_code.shape)
-    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
+    mapping_dict = SIRLU.create_coords_utm_mapping(who)
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, 
+                        coords_proj=mapping_dict, state_only=True)
 
     # model.loadParams(model_dir + 'params_transformer_pe.pickle')
     model.loadParams(params_path)

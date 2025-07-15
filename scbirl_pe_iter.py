@@ -1,6 +1,7 @@
 import pickle
 import copy
 import os
+import logging
 import SCBIRL_Global_PE.SCBIRLTransformer as SIRLT
 import SCBIRL_Global_PE.utils as SIRLU
 import SCBIRL_Global_PE.migrationProcess as SIRLP
@@ -19,18 +20,17 @@ from tqdm.auto import tqdm
 
 def train_model_one_traveler(who: int):
     data_dir = UserDataPart + '{:09d}/'.format(who)
-    model_dir = '/root/autodl-tmp/model/{:09d}/'.format(who)
+    model_dir = 'model/{:09d}/'.format(who)
     
     iter_start_date = SIRLU.load_traveler(who).iter_start_date
     # here the `iter_start_date` is a constant defined by utility module.
     inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    print(inputs.shape, targets_action.shape, positions.shape)
-    # tabular rasa model
-    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
+    logging.debug(inputs.shape, targets_action.shape, positions.shape)
     mapping_dict = SIRLU.create_coords_utm_mapping(who)
-    model.set_coords_utm_mapping(mapping_dict)
+    # tabular rasa model
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True, coords_proj=mapping_dict)
 
-    # model the model with no prior knowledge, just nearest experience
+    # model with no prior knowledge, just nearest experience
     # if the training is interrupted, we can resume the training from the last date.
     PriorKnow.experienceModel(model, data_dir, model_dir, start_date = iter_start_date)
     # NOTE: Compute rewards after migration

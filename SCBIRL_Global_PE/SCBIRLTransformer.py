@@ -39,6 +39,7 @@ class avril:
         state_dim: int,
         action_dim: int,
         state_only: bool = True,
+        coords_proj: dict = None,
         num_layers: int = 2,
         num_heads: int = 1,
         num_scale: int = 4,
@@ -67,9 +68,11 @@ class avril:
         """
 
         self.key = random.PRNGKey(seed)
-        self._pe_code_mapping = dict()
+        # self._pe_code_mapping = dict()
         self._coords = None  # 初始化UTM坐标缓存
         self.coords_utm_mapping = None  # 初始化为None，表示不使用UTM坐标映射
+        if coords_proj is not None:
+            self._set_coords_utm_mapping(coords_proj)
 
         self.num_layers = num_layers
         self.num_heads = num_heads
@@ -137,7 +140,7 @@ class avril:
             return value
     
     
-    def set_coords_utm_mapping(self, mapping_dict):
+    def _set_coords_utm_mapping(self, mapping_dict):
         """
         设置经纬度到UTM坐标的映射字典
         
@@ -450,7 +453,7 @@ class avril:
             lik, g_params = loss_grad(params, key, inputs[indexs], targets[indexs], positions[indexs], weights = weights)
 
             loss_diff = abs(lik-lik_pre)
-            print(lik-lik_pre, lik)
+            # print(lik-lik_pre, lik)
             if loss_diff < loss_threshold:
                 print(f"Training stopped at iteration {itr} as loss {loss_diff} is below the threshold {loss_threshold}")
                 break

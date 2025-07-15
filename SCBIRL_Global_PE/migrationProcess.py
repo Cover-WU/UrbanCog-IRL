@@ -97,9 +97,9 @@ def afterMigrt(model, dataPath, outputPath, start_date, iter_type):
     modelDir = outputPath + folder_name
     if not os.path.exists(modelDir):
         os.makedirs(modelDir)
-    memory_buffer = 10 - 1 # ? cov: 应该是9吧，后面还有加一个日期，如果是10的话最后会有11天作为训练。问题不大，只是个数量问题。
+    memory_buffer = 10 - 1 
 
-    for i in range(len(trajIterChains)):
+    for i in range(0, len(trajIterChains), 10):
 
         if i < memory_buffer:
             iter_training_set = trajInitChains[-(memory_buffer-i):] + trajIterChains[:i]

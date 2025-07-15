@@ -61,14 +61,17 @@ def loadModel(who, date = None, prior = True, accumulate = False, tabular = Fals
     iter_start_date = load_traveler(who).iter_start_date
     inputs, targets_action, positions, action_dim, state_dim = loadTrajChain(data_dir, type='before', start_date=iter_start_date)
     print(inputs.shape, targets_action.shape, positions.shape)
-    
-    # 创建模型
-    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
-    
-    # 如果需要使用UTM坐标，创建经纬度到UTM坐标的映射并设置
+
+    # 如果需要使用UTM坐标，创建经纬度到UTM坐标的映射并设置    
     if use_utm:
         coords_utm_mapping = create_coords_utm_mapping(who)
-        model.set_coords_utm_mapping(coords_utm_mapping)
+    else:
+        coords_utm_mapping = None
+    
+    # 创建模型
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, coords_proj=coords_utm_mapping,
+                        state_only=True)
+    
     
     if tabular: 
         return model

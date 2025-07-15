@@ -42,7 +42,7 @@ def experienceModel(model_no_prior, dataPath, outputPath, start_date):
         os.makedirs(modelDir)
     memory_buffer = 10 - 1 # days
 
-    for i in range(len(trajIterChains)):
+    for i in range(0, len(trajIterChains), 10):
         model = copy.deepcopy(model_no_prior)
         if i < memory_buffer:
             iter_training_set = trajInitChains[-(memory_buffer-i) : ] + trajIterChains[ : i]
