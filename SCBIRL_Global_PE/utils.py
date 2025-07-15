@@ -50,7 +50,7 @@ def loadTravelChainAll(who: int):
     return chains_loaded
     
 
-def loadModel(who, date = None, prior = True, accumulate = False, tabular = False):
+def loadModel(who, date = None, prior = True, accumulate = False, tabular = False, use_utm=True):
     '''
         Load the model from the model directory.
         Must correctly set the directory at first.
@@ -61,7 +61,15 @@ def loadModel(who, date = None, prior = True, accumulate = False, tabular = Fals
     iter_start_date = load_traveler(who).iter_start_date
     inputs, targets_action, positions, action_dim, state_dim = loadTrajChain(data_dir, type='before', start_date=iter_start_date)
     print(inputs.shape, targets_action.shape, positions.shape)
+    
+    # 创建模型
     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True)
+    
+    # 如果需要使用UTM坐标，创建经纬度到UTM坐标的映射并设置
+    if use_utm:
+        coords_utm_mapping = create_coords_utm_mapping(who)
+        model.set_coords_utm_mapping(coords_utm_mapping)
+    
     if tabular: 
         return model
     
@@ -124,8 +132,6 @@ def coords2UTMmeters(coords: np.ndarray):
             x, y = lon, lat
         else:
             x, y = transformer.transform(lon, lat)
-            # turn to km.
-            x, y = x / 1e3, y / 1e3
         utm_reshape.append([x, y])
     utm_reshape = np.array(utm_reshape)
     utm = utm_reshape.reshape(coords.shape)
@@ -491,6 +497,53 @@ def normalize(vals):
     min_val = np.min(vals)
     max_val = np.max(vals)
     return (vals - min_val) / (max_val - min_val)
+
+def create_coords_utm_mapping(who: int = None, pos_list=None):
+    """
+    创建经纬度到UTM坐标的映射字典
+    
+    参数:
+    -----
+    who : int, optional
+        用户ID，如果提供，将从该用户的轨迹中提取所有坐标
+    pos_list : list, optional
+        经纬度坐标列表，如果提供，将直接使用这些坐标创建映射
+        
+    返回:
+    -----
+    dict
+        经纬度坐标(tuple)到UTM坐标(tuple)的映射字典
+    """
+    # 如果提供了用户ID，从用户轨迹中提取所有坐标
+    if who is not None and pos_list is None:
+        traj_chains = loadTravelChainAll(who)
+        pos_set = set()
+        for tc in traj_chains:
+            for coord in tc.travel_chain:
+                pos_set.add(tuple(coord))
+        pos_list = list(pos_set)
+    
+    # 如果提供了坐标列表，直接使用
+    if pos_list is not None:
+        # 创建映射字典
+        coords_utm_mapping = {}
+        crs_src = pyproj.CRS('EPSG:4326')
+        crs_tgt = pyproj.CRS('EPSG:32650')
+        transformer = pyproj.Transformer.from_crs(crs_src, crs_tgt, always_xy=True)
+        
+        for position in pos_list:
+            lon, lat = position
+            if abs(lon) > 180 or abs(lat) > 90:
+                # 无效坐标，保持原值
+                x, y = lon, lat
+            else:
+                # 转换为UTM坐标（单位：千米）
+                x, y = transformer.transform(lon, lat)
+            coords_utm_mapping[position] = (x, y)
+        
+        return coords_utm_mapping
+    
+    return {}
 
 if __name__ == "__main__":
     path = f'./data/before_migrt.json'

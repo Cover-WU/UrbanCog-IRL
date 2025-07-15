@@ -68,6 +68,8 @@ class avril:
 
         self.key = random.PRNGKey(seed)
         self._pe_code_mapping = dict()
+        self._coords = None  # 初始化UTM坐标缓存
+        self.coords_utm_mapping = None  # 初始化为None，表示不使用UTM坐标映射
 
         self.num_layers = num_layers
         self.num_heads = num_heads
@@ -90,12 +92,12 @@ class avril:
 
         self.e_params = self.encoder.init(
             self.key, 
-            inputs, positions, self.posicode, num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
+            inputs, self.coords, self.posicode, num_layers, num_heads, num_scale, dff, rate, self.encoder_o_dim, self.key
         )
 
         enc_output = random.normal(self.key, inputs.shape[:-1] + (2,))
         self.q_params = self.q_network.init(
-            self.key, inputs, enc_output, positions, self.posicode, num_layers, num_heads, num_scale, dff, rate, action_dim, self.key
+            self.key, inputs, enc_output, self.coords, self.posicode, num_layers, num_heads, num_scale, dff, rate, action_dim, self.key
         )
 
         self.params = (self.e_params, self.q_params)
@@ -103,30 +105,69 @@ class avril:
         self.load_params = False
         self.pre_params = None
         return
+
+    
+    @property
+    def coords(self):
+        return self._coords
+    
     
     @property
     def positions(self):
         return self._positions
     
+    
     @positions.setter
     def positions(self, value):
         self._positions = value
-        self._update_posicode(value)
+        # 更新UTM坐标
+        coords = self._position_update(value)
+        self._coords = coords
     
-    @property
-    def posicode(self):
-        return self._pe_code_mapping
     
-    def _update_posicode(self, value):
-        # unique the coords and find the unrecorded coords
-        updated_coords = [tuple(p) for p in onp.unique(value.reshape(-1, value.shape[-1]), axis=0)]
-        incoming_coords = [p for p in updated_coords if p not in self._pe_code_mapping]
+    def _position_update(self, value):
+        if self.coords_utm_mapping is not None:
+            self._update_coords_utm_mapping(value)
+            position_array = value.reshape(-1, value.shape[-1])
+            position_list = [tuple(pos) for pos in position_array]
+            coords_list = [self.coords_utm_mapping[pos] for pos in position_list]
+            coords_from_value = np.array(coords_list).reshape(value.shape)
+            return coords_from_value
+        else:
+            return value
+    
+    
+    def set_coords_utm_mapping(self, mapping_dict):
+        """
+        设置经纬度到UTM坐标的映射字典
+        
+        参数:
+        -----
+        mapping_dict : dict
+            经纬度坐标(tuple)到UTM坐标(tuple)的映射字典
+        """
+        self.coords_utm_mapping = dict()
+        # copy the mapping dict to the class variable
+        self.coords_utm_mapping.update(mapping_dict)
+        return 
+
+    def _update_coords_utm_mapping(self, value):
+        """
+        使用坐标映射将positions转换为coords
+        """
+        assert value.shape[-1] == 2, "positions must be 2D array"
+        
+        value_flat = value.reshape(-1, 2)
+        # turn the value_flat to a set of lon-lat tuple
+        value_set = set(tuple(pos) for pos in value_flat)
+        # find the unrecorded coords
+        unrecorded_coords = [coord for coord in value_set if coord not in self.coords_utm_mapping]
         # if there are new coords, compute the PE code for them
-        if incoming_coords:
-            # update the pe_code dictionary
-            pe_codes = [globalPE(coords, 2 * self.num_heads * self.num_scale).flatten() for coords in incoming_coords]
-            pe_codes = [pe_code.real + pe_code.imag for pe_code in pe_codes]
-            self._pe_code_mapping.update(dict(zip(incoming_coords, pe_codes)))
+        if unrecorded_coords:
+            mapping_to_be_updated = utils.create_coords_utm_mapping(pos_list=unrecorded_coords)
+            self.coords_utm_mapping.update(mapping_to_be_updated)
+        
+    
     
     def modelSave(self, model_save_path):
         with open(model_save_path,'wb') as f:
@@ -142,15 +183,15 @@ class avril:
             self.e_params = self.params[0]
             self.q_params = self.params[1]
 
-    def reward(self,state,positions):
-        self._update_posicode(positions)
-        #  Returns reward function parameters for a given state
+    def reward(self, state, positions):
+        # 设置当前positions
+        coords = self._position_update(positions)
+        #  Returns reward function parameters for a given state
         r_par = self.encoder.apply(
                 self.e_params,
                 self.key,
                 state,
-                positions,
-                self.posicode,
+                coords,  # 使用UTM坐标
                 self.num_layers,
                 self.num_heads,
                 self.num_scale,
@@ -163,13 +204,13 @@ class avril:
         return r_par
     
     def QValue(self, state, positions):
-        self._update_posicode(positions)
+        # 设置当前positions
+        coords = self._position_update(positions)
         enc_output = self.encoder.apply(
                 self.e_params,
                 self.key,
                 state,
-                positions,
-                self.posicode, 
+                coords,  # 使用UTM坐标
                 self.num_layers,
                 self.num_heads,
                 self.num_scale,
@@ -184,8 +225,7 @@ class avril:
             self.key,
             state,
             enc_output,
-            positions,
-            self.posicode,
+            coords,  # 使用UTM坐标
             self.num_layers,
             self.num_heads,
             self.num_scale,
@@ -212,6 +252,8 @@ class avril:
             State training data of size [num_pairs x 2 x state_dimension]
         targets: np.array
             Action training data of size [num_pairs x 2 x 1]
+        positions: np.array
+            Position data of size [num_pairs x 2 x 2]
 
         Returns
         -------
@@ -219,6 +261,7 @@ class avril:
         elbo: float
             Value of the ELBO
         """
+        coords = self._position_update(positions)
 
         def getRewardParameters(encoder_params, state_dim):
             # here, state_dim is eihter 0 or 1
@@ -227,8 +270,7 @@ class avril:
                 encoder_params,
                 key,
                 inputs[:, :, state_dim, np.newaxis, :],
-                positions[:, :, state_dim, np.newaxis, :],
-                self.posicode,
+                coords[:, :, state_dim, np.newaxis, :],  # 使用UTM坐标
                 self.num_layers,
                 self.num_heads,
                 self.num_scale,
@@ -259,8 +301,7 @@ class avril:
             key,
             inputs[:, :, 0, np.newaxis, :],
             enc_output,
-            positions[:, :, 0, np.newaxis, :],
-            self.posicode,
+            coords[:, :, 0, np.newaxis, :],  # 使用UTM坐标
             self.num_layers,
             self.num_heads,
             self.num_scale,
@@ -281,8 +322,7 @@ class avril:
             key,
             inputs[:, :, 1, np.newaxis, :],
             enc_output1,
-            positions[:, :, 1, np.newaxis, :],
-            self.posicode,
+            coords[:, :, 1, np.newaxis, :],  # 使用UTM坐标
             self.num_layers,
             self.num_heads,
             self.num_scale,
@@ -356,7 +396,7 @@ class avril:
 
         inputs = self.inputs
         targets = self.targets
-        positions = self.positions
+        positions = self.positions  # 这里获取经纬度坐标
         if weights is not None:
             weights_array = np.array(weights)
         
@@ -392,7 +432,8 @@ class avril:
             
             if weights is not None:
                 weights = weights_array[indexs]
-
+            
+            # elbo方法内部会处理坐标转换
             lik, g_params = loss_grad(params, key, inputs[indexs], targets[indexs], positions[indexs], weights = weights)
 
             loss_diff = abs(lik-lik_pre)
