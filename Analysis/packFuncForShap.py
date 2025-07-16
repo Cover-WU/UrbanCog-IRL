@@ -328,10 +328,9 @@ if __name__ == '__main__':
     model_dir = './model/'
     user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
     user_list.sort()
-    user_list = user_list[:1]
     for user in user_list:
         # note: remember to change back
-        res = explainOneUser(user, parallel=True, binary_be_vs_loc=True, blank=True)
+        res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=True)
         with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
             pickle.dump(res, f)
     '''

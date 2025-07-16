@@ -248,7 +248,8 @@ def topoNodeCluster(who, method='spectral', optimal='silhouette'):
         np.fill_diagonal(disimilarity, 0)
         labels = clusterer.fit_predict(disimilarity)
     return labels
-    
+
+
 def nodeVerTraj(who, labels):
     """
     Convert location IDs in trajectories to their corresponding cluster labels.

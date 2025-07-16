@@ -160,9 +160,9 @@ if __name__ =="__main__":
     '''
         Iteration Version
     '''
-    who_list = [1102234]
-    for who in who_list:
-        train_model_one_traveler(who = who)
+    who_list = [1102234, 6945721, 25679537, 58124481, 82455786]
+    # for who in who_list:
+    #     train_model_one_traveler(who = who)
 
     '''
         Parallel Version
@@ -180,7 +180,7 @@ if __name__ =="__main__":
     '''
         Professional Parallel Version
     '''
-    # file_list = os.listdir(UserDataPart)
+    file_list = os.listdir(UserDataPart)
     # # Example who_list
     # # who_list = [int(pid) for pid in file_list]
     # who_list = [68058890, 10013454, 58272403,
@@ -188,15 +188,15 @@ if __name__ =="__main__":
     #             82455786, 58124481, 54636959,
     #              1102234, 25679537,102181433]  # Limit to 10 travelers for testing
     
-    # # Configure Dask for your hardware
-    # n_workers = min(32, len(who_list))  # Number of CPU cores
-    # threads_per_worker = 4  # Threads per worker (128/32 = 4)
+    # Configure Dask for your hardware
+    n_workers = min(32, len(who_list))  # Number of CPU cores
+    threads_per_worker = 4  # Threads per worker (128/32 = 4)
     
-    # # Train models with batch processing
-    # results = train_model_batch(
-    #     who_list,
-    #     batch_size=n_workers  # Adjust based on memory requirements
-    # )
+    # Train models with batch processing
+    results = train_model_batch(
+        who_list,
+        batch_size=n_workers  # Adjust based on memory requirements
+    )
     
     '''
         Terminal Version

@@ -36,7 +36,7 @@ from scipy.spatial import distance_matrix
 # note: scipy wasserstein function is too slow.
 from scipy.stats import wasserstein_distance_nd, lognorm
 from scipy.stats import lognorm
-import ot
+# import ot
 import jax
 jax.config.update('jax_platform_name', 'cpu')
 
@@ -194,6 +194,36 @@ def computeTransitionProb(model, who, date):
     
     res = (np.array(transitionProbs), coordsIdx)
     return res
+
+
+def computeTripDistribution(who, id_coorders_mapping):
+    """
+    生成每个地点到其他地点之间存在直接出行关联的概率分布矩阵。
+    参数：
+        who: int，用户id
+        id_coorders_mapping: dict，地点id到坐标的映射，key为id，且为0~n-1顺序增长
+    返回：
+        trip_matrix: np.ndarray, shape=(n, n)，每一行是该id出发的概率分布
+    """
+    n = len(id_coorders_mapping)
+    trip_matrix = np.zeros((n, n), dtype=np.float64)
+
+    # 获取所有轨迹
+    trajs = SIRLU.load_all_traj(who)
+    for traj in trajs:
+        ids = traj.id_chain
+        for i in range(len(ids) - 1):
+            a, b = ids[i], ids[i+1]
+            if 0 <= a < n and 0 <= b < n:
+                trip_matrix[a, b] += 1
+                trip_matrix[b, a] += 1  # 对称
+
+    # 按行归一化
+    row_sums = trip_matrix.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1  # 防止除0
+    trip_matrix = trip_matrix / row_sums
+    return trip_matrix
+
 
 def topoResPath(who):
     who_string = SIRLU.toWhoString(who)
@@ -410,19 +440,18 @@ def clusterLocations(who, date, res_save=True):
     
     return res
 
-def clusterLocationsSimple(who, clusterer='knee'):
+def clusterLocationsSimple(who, use_social=True, clusterer='knee'):
     who_string = SIRLU.toWhoString(who) + '/'
     data_dir = UserDataPart + who_string    
     # read the list of location codes 
     id_coords_mapping = SIRLU.load_id_coords_mapping(who)
     id_tempo_mapping = SIRLU.load_id_tempo_mapping(who)
     id_coorders_mapping = dict(sorted(id_coords_mapping.items()))
-    num_locs = len(id_coorders_mapping)
     
     coords_list = list(id_coorders_mapping.values())
     spatial_dist = compute_geodistace(coords_list)
     logging.info("Geographic distance computation finished.")
-
+    
     # Compute the temporal distribution
     angular_distribution = np.array([id_tempo_mapping[id] for id in id_coorders_mapping])
     slot_num = 24 * 4
@@ -440,15 +469,41 @@ def clusterLocationsSimple(who, clusterer='knee'):
     positive_smooth = lambda m: np.where(m <= 0, np.min(m[m > 0]), m)
     bandwidth_in_kilometers = 1.0
     
-    # standardize the social distance matrix to fit standard log-normal distribution
+    
+    if use_social:
+        # Compute a social distance matrix
+        trip_distribution = computeTripDistribution(who, id_coorders_mapping)
+        social_dist = compute_wasserstein_matrix_numba(trip_distribution, spatial_dist)
+        logging.info("Social distance computation finished.")
+        
+        # standardize the social distance matrix to fit standard log-normal distribution
+        social_dist_upper = social_dist[np.triu_indices_from(social_dist, k=1)]
+        social_dist_upper = positive_smooth(social_dist_upper)
+        log_social_dist = np.log(social_dist_upper)
+        log_mean = np.mean(log_social_dist)
+        log_std = np.std(log_social_dist)
+        log_social_dist_std = (log_social_dist - log_mean) / log_std
+        target_mu = 0
+        target_sigma = 1
+        social_dist_upper_scaled = np.exp(target_mu + target_sigma * log_social_dist_std)
+        social_dist_standard = np.zeros_like(social_dist)
+        social_dist_standard[np.triu_indices_from(social_dist, k=1)] = social_dist_upper_scaled
+        social_dist_standard += social_dist_standard.T  # 保持对称性
+        
+        social_dist_standard = positive_smooth(social_dist_standard)
+    else:
+        social_dist_standard = np.ones_like(spatial_dist)
+    
     temporal_dist = positive_smooth(temporal_dist)
     
     # spatial similarity is computed by a gaussian kernel
     spatial_similarity = np.exp(-spatial_dist ** 2 / (2 * bandwidth_in_kilometers ** 2))
     # According to the 3 sigma rule, the left rare tail point for standard log-normal distribution is exp(-3)
     # then its corresponding quotient is eps(3) near to 20
+    social_similarity = np.clip(1 / (social_dist_standard), eps, 20) 
     temporal_similarity = np.maximum(-np.log(temporal_dist / 12), eps)
-    total_similarity = spatial_similarity * temporal_similarity
+    total_similarity = spatial_similarity * social_similarity * temporal_similarity
+    
     total_sim = total_similarity[np.triu_indices_from(total_similarity, k=1)]
     total_sim_max = np.max(total_sim)   
     if clusterer == 'knee':
@@ -559,17 +614,20 @@ if __name__ == '__main__':
     save_dir = "./product/topoMap/"
     user_list = [name for name in os.listdir(model_dir) if name.isdigit()]
     res_dict = dict()
+    # for user in user_list:
+    #     user_int = int(user)
+    #     migrt_date = SIRLU.load_traveler(user_int).iter_start_date
+    #     visit_dates = SIRLU.visited_date(user_int)
+    #     # 获取iter_start_date之后每周的最后一天
+    #     week_end_dates, _ = SIRLU.extract_week_ends(visit_dates)
+    #     recording_dates = [date for date in week_end_dates if date >= migrt_date]
+    #     for date in recording_dates:
+    #         res = clusterLocations(user_int, date)
+    #         # res_dict[(user, date)] = res
+    #         # with open(save_dir + f'topo_cluster.pkl', 'wb') as f:
+    #         #     pickle.dump(res_dict, f)
     for user in user_list:
         user_int = int(user)
-        migrt_date = SIRLU.load_traveler(user_int).iter_start_date
-        visit_dates = SIRLU.visited_date(user_int)
-        # 获取iter_start_date之后每周的最后一天
-        week_end_dates, _ = SIRLU.extract_week_ends(visit_dates)
-        recording_dates = [date for date in week_end_dates if date >= migrt_date]
-        for date in recording_dates:
-            res = clusterLocations(user_int, date)
-            # res_dict[(user, date)] = res
-            # with open(save_dir + f'topo_cluster.pkl', 'wb') as f:
-            #     pickle.dump(res_dict, f)
+        res = clusterLocationsSimple(user_int)
 
 
