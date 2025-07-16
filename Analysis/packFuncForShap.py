@@ -12,6 +12,9 @@ from SCBIRL_Global_PE.utils import TravelData, Traveler, UserDataPart
 import numpy as np
 import pandas as pd
 import shap
+from scipy.spatial.distance import squareform
+from scipy.cluster.hierarchy import linkage
+
 from datetime import date, timedelta
 from itertools import repeat, chain
 from functools import partial
@@ -26,6 +29,26 @@ jax.config.update('jax_platform_name', 'cpu')
 MAX_CPU_COUNT = mp.cpu_count() - 1
 # MAX_CPU_COUNT = 48
 
+
+def make_linkage_by_grouping(group_labels):
+    """
+    构造 linkage matrix，使得同组变量间距离为 distance_within，异组为 distance_between。
+
+    参数：
+    - group_labels: List[int]，每个特征的组别编号，例如 [0,1,2,3,4,5,6,7,8,9,10,10]
+    - distance_within: float，同组变量之间的距离（默认设为 0）
+    - distance_between: float，异组变量之间的距离（默认设为 1）
+    - method: str，层次聚类方法，见 scipy.cluster.hierarchy.linkage，默认 'average'
+
+    返回：
+    - linkage_matrix: np.ndarray，可传入 shap.maskers.Partition(..., clustering=...)
+    """
+    not_equal = ~(group_labels[:, None] == group_labels.T)
+    # turn to number matrix
+    dist = not_equal.astype(float)
+    condensed = squareform(dist)
+    linkage_matrix = linkage(condensed, method='average')
+    return linkage_matrix
 
 def modelPredict(X: np.ndarray[float, float], model, standardize = False,
                  attribute_type = 'reward', mu = None, sigma = None):
@@ -165,10 +188,7 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
         return modelPredict(X, model=model, standardize=True,
                             attribute_type='reward', mu=mu, sigma=sigma)
     # modelPredWrapper = partial(modelPredict, weight=dataset_freq, model=model, standardize=True, attribute_type='reward')
-    
-    explainer = shap.PermutationExplainer(modelPredWrapper, home_bench)
-    shap_values = explainer(dataset_uni)
-    
+
     # below: group the shape var names
     varchr = 'LU_Business,LU_Green,LU_Industry,LU_Public,LU_Residence,subway,density,intersections,road_density,rent'
     varname_BE = varchr.split(',')
@@ -179,9 +199,18 @@ def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = Tru
             'BuiltAttr': varname_BE,
             'Location': varname_PO
         }
+        group_perm = np.array([0] * model.s_dim + [1] * 2)
     else:
         groupmap = {v: [v] for v in varname_BE}
         groupmap['Location'] = varname_PO
+        group_perm = np.array(list(range(model.s_dim)) + [model.s_dim] * 2)
+
+    hclustering = make_linkage_by_grouping(group_perm)
+    # create the shap masker
+    home_bench_masker = shap.maskers.Partition(home_bench, clustering=hclustering)
+    explainer = shap.explainers.Permutation(modelPredWrapper, home_bench_masker)
+    shap_values = explainer(dataset_uni)
+    
     shap_grouped_by_classes = grouped_shap(shap_vals=shap_values.values, features=varname, groups=groupmap)
     return shap_grouped_by_classes, dataset_freq, dataset_iden
 
@@ -222,7 +251,7 @@ def modelDateOfUser(user, by_week = True):
 
 def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):
     # parallel version of SHAP explain for one user.
-    date_list = modelDateOfUser(user)
+    date_list = modelDateOfUser(user, by_week=False)
     if not parallel:
         shap_dict = dict()
         # add reverse to mitigate the load balancing problem.
@@ -296,15 +325,15 @@ if __name__ == '__main__':
     '''
     Half Parallel Version
     '''
-    # model_dir = './model/'
-    # user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
-    # user_list.sort()
-    # user_list = user_list[1:]
-    # for user in user_list:
-    #     # note: remember to change back
-    #     res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
-    #     with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
-    #         pickle.dump(res, f)
+    model_dir = './model/'
+    user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
+    user_list.sort()
+    user_list = user_list[:1]
+    for user in user_list:
+        # note: remember to change back
+        res = explainOneUser(user, parallel=True, binary_be_vs_loc=True, blank=True)
+        with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
+            pickle.dump(res, f)
     '''
     By Hand
     '''
@@ -313,7 +342,7 @@ if __name__ == '__main__':
     # user_list.sort()
 
     # user = 1102234
-    # res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=False)
+    # res = explainOneUser(user, parallel=False, binary_be_vs_loc=False, blank=False)
     # with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
     #     pickle.dump(res, f)
     '''
@@ -335,4 +364,4 @@ if __name__ == '__main__':
     # shap_dict = dict()
     # date = 20230507
     # shap_dict[date] = modelRewardExplain(date, who=1102234)
-    pass
+    # pass

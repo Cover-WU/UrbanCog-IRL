@@ -1,9 +1,12 @@
 # import module from the parent directory
 import sys
 import os
+import json
 import numpy as np
 working_directory = os.path.abspath('.')
 sys.path.append(working_directory)
+
+import jax
 
 import SCBIRL_Global_PE.utils as SIRLU
 from SCBIRL_Global_PE.migrationProcess import *
@@ -18,7 +21,7 @@ def trajectoryCompute(model, tcs: List[TravelData], state_attribute: pd.DataFram
         Compute the reward and value of the trajectory using the model.
         Based on Transformer-based model.
     '''
-    stateNextState, _, peNextpe = processTrajectoryData(tcs, state_attribute, model.s_dim)
+    stateNextState, _, peNextpe = SIRLU.processTrajectoryData(tcs, state_attribute, model.s_dim)
     states = stateNextState[:, :, 0, np.newaxis, :] # [num_traj, max_steps, 1, state_dim]
     pe_codes = peNextpe[:, :, 0, np.newaxis, :] # [num_traj, max_steps, 1, pecode_dim]
     pad_mask = np.where(states == Padding, True, False).all(axis = (-1, -2))
@@ -111,8 +114,8 @@ def visitedDate(all_traj_path='./data/all_traj.json'):
     return visited_dates
 
 def personPredictEvaluation(who: int):
-    id_coords_mapping = load_id_coords_mapping(who)
-    traveler = load_traveler(who)
+    id_coords_mapping = SIRLU.load_id_coords_mapping(who)
+    traveler = SIRLU.load_traveler(who)
     
     migrtdate = traveler.migrt
     visitdate = traveler.visit_date
@@ -193,7 +196,7 @@ def stepwise_kl_div_compute(df_1: pd.DataFrame, df_2: pd.DataFrame):
 
 
 def personInterpretEvaluation(who: int, period: str = 'future'):
-    traveler = load_traveler(who)
+    traveler = SIRLU.load_traveler(who)
     migrtdate = SIRLU.load_traveler(who).iter_start_date
 
     visitdate = traveler.visit_date
@@ -277,21 +280,21 @@ if __name__ == "__main__":
     '''
     Parallel Verison
     '''
-    import multiprocessing as mp
-    CPU_COUNT = len(wholist)
-    # CPU_COUNT = 16
-    with mp.Pool(CPU_COUNT) as pool:
-        iterDfs = pool.starmap(personInterpretEvaluation, params_list)
+    # import multiprocessing as mp
+    # CPU_COUNT = len(wholist)
+    # # CPU_COUNT = 16
+    # with mp.Pool(CPU_COUNT) as pool:
+    #     iterDfs = pool.starmap(personInterpretEvaluation, params_list)
 
-    with open('./product/iterationEvo_TOTAL.pkl', 'wb') as file:
-        pickle.dump(iterDfs, file)
+    # with open('./product/iterationEvo_TOTAL.pkl', 'wb') as file:
+    #     pickle.dump(iterDfs, file)
     
     '''
     Hand Version
     '''
-    # i = 0
-    # who = wholist[i]
-    # res = dict()
-    # res[who] = personInterpretEvaluation(who)    
-    # with open('./product/interpretEvo_{:09d}.pkl'.format(i), 'wb') as file:
-    #     pickle.dump(res, file)    
+    i = 0
+    who = wholist[i]
+    res = dict()
+    res[who] = personInterpretEvaluation(who, 'total')    
+    with open('./product/interpretEvo_{:09d}.pkl'.format(i), 'wb') as file:
+        pickle.dump(res, file)    
