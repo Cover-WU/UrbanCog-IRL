@@ -73,6 +73,7 @@ product/
 data/
 data_pub/
 backup/
+trash/
 
 # any history and chat records
 .history/

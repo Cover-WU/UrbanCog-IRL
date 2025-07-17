@@ -253,6 +253,42 @@ class avril:
         q_values = np.squeeze(q_values,axis=2)
         return q_values
 
+    def inference_rollout_QValue(self, enc_state, enc_positions, dec_state, dec_positions):
+        # 将计划的出行地点和实际出行决策分离，从而可以计算出rollout的policy
+        end_coords = self._position_update(enc_positions)
+        dec_coords = self._position_update(dec_positions)
+        
+        enc_output = self.encoder.apply(
+                self.e_params,
+                self.key,
+                enc_state,
+                end_coords,  # 使用UTM坐标
+                self.num_layers,
+                self.num_heads,
+                self.num_scale,
+                self.dff,
+                self.rate,
+                self.encoder_o_dim,
+                self.key
+            )
+
+        q_values = self.q_network.apply(
+                self.q_params,
+                self.key,
+                dec_state,
+                enc_output,
+                dec_coords,  # 使用UTM坐标
+                self.num_layers,
+                self.num_heads,
+                self.num_scale,
+                self.dff,
+                self.rate,
+                self.a_dim,
+                self.key
+            )
+        q_values = np.squeeze(q_values,axis=2)
+        return q_values
+        
     def elbo(self, params, key, inputs, targets, positions, weights = None):
         """
         Method for calculating ELBO

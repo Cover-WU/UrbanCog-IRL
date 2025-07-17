@@ -160,7 +160,7 @@ if __name__ =="__main__":
     '''
         Iteration Version
     '''
-    who_list = [1102234, 6945721, 25679537, 58124481, 82455786]
+    # who_list = [1102234, 6945721, 25679537, 58124481, 82455786]
     # for who in who_list:
     #     train_model_one_traveler(who = who)
 
@@ -181,8 +181,8 @@ if __name__ =="__main__":
         Professional Parallel Version
     '''
     file_list = os.listdir(UserDataPart)
-    # # Example who_list
-    # # who_list = [int(pid) for pid in file_list]
+    # Example who_list
+    who_list = [int(pid) for pid in file_list]
     # who_list = [68058890, 10013454, 58272403,
     #              6945721, 71209087, 93854949,
     #             82455786, 58124481, 54636959,

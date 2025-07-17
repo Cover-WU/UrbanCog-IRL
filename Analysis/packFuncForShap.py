@@ -228,7 +228,7 @@ def modelUserDateCombination(by_week=True):
     for user in user_list:
         evolution_model_path = model_dir + user + '/' + 'evolution_model/'
         date_list = [int(params.rstrip('.pickle')[-8:]) for params in os.listdir(evolution_model_path)]
-        date_list = SIRLU.extract_week_ends(date_list)[0] if by_week else date_list[::7]
+        date_list = SIRLU.extract_week_ends(date_list)[0] if by_week else date_list[::7] # similarly we can change to 1
         for date in date_list:
             combination.append((int(user), date))
     return combination
@@ -245,8 +245,8 @@ def modelDateOfUser(user, by_week = True):
     date_list = [int(params.rstrip('.pickle')[-8:]) for params in os.listdir(evolution_model_path)]
     if by_week:
         date_list, _ = SIRLU.extract_week_ends(date_list)
-    else:        
-        date_list = date_list[::7]
+    else:
+        date_list = date_list[::7] # if the model is not continuously trained, change 7 to 1.
     return date_list
 
 def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):

@@ -113,75 +113,75 @@ def visitedDate(all_traj_path='./data/all_traj.json'):
     visited_dates = [d.get('date') for d in loaded_dicts_all]
     return visited_dates
 
-def personPredictEvaluation(who: int):
-    id_coords_mapping = SIRLU.load_id_coords_mapping(who)
-    traveler = SIRLU.load_traveler(who)
+# def personPredictEvaluation(who: int):
+#     id_coords_mapping = SIRLU.load_id_coords_mapping(who)
+#     traveler = SIRLU.load_traveler(who)
     
-    migrtdate = traveler.migrt
-    visitdate = traveler.visit_date
-    # create a list of dates for evolution evaluation
-    evoludate = list(filter(lambda d: d >= migrtdate, visitdate))
-    # create buffer range: 10 future days and the date itself
-    evolution_buffer = 10 + 1
+#     migrtdate = traveler.migrt
+#     visitdate = traveler.visit_date
+#     # create a list of dates for evolution evaluation
+#     evoludate = list(filter(lambda d: d >= migrtdate, visitdate))
+#     # create buffer range: 10 future days and the date itself
+#     evolution_buffer = 10 + 1
 
-    pr_contrib_list = []
-    exp_contrib_list = []
-    pr_log_contrib_list = []
-    exp_log_contrib_list = []
+#     pr_contrib_list = []
+#     exp_contrib_list = []
+#     pr_log_contrib_list = []
+#     exp_log_contrib_list = []
     
-    for one_evolution_date in evoludate:
-        # find the position of the evolution date
-        evolution_pos = evoludate.index(one_evolution_date)
-        # if the buffer range is out of range, break the loop
-        if evolution_pos + evolution_buffer > len(evoludate):
-            break
-        print("The evolution date is: ", one_evolution_date)
+#     for one_evolution_date in evoludate:
+#         # find the position of the evolution date
+#         evolution_pos = evoludate.index(one_evolution_date)
+#         # if the buffer range is out of range, break the loop
+#         if evolution_pos + evolution_buffer > len(evoludate):
+#             break
+#         print("The evolution date is: ", one_evolution_date)
         
-        # create the date range for evaluation
-        evolution_date_range = evoludate[evolution_pos : evolution_pos + evolution_buffer]
-        # know the start and end date for evaluation func
-        start_date = evolution_date_range[0]
-        end_date = evolution_date_range[-1]
+#         # create the date range for evaluation
+#         evolution_date_range = evoludate[evolution_pos : evolution_pos + evolution_buffer]
+#         # know the start and end date for evaluation func
+#         start_date = evolution_date_range[0]
+#         end_date = evolution_date_range[-1]
         
-        if evolution_pos < 10:
-            prior_model = loadModel(who=who, )
-        else:
-            prior_evolution_date = evoludate[evolution_pos - 10]
-            prior_model = loadModel(who=who, date=prior_evolution_date, prior=True)
+#         if evolution_pos < 10:
+#             prior_model = loadModel(who=who, )
+#         else:
+#             prior_evolution_date = evoludate[evolution_pos - 10]
+#             prior_model = loadModel(who=who, date=prior_evolution_date, prior=True)
 
-        experience_model = loadModel(who=who, date=one_evolution_date, prior=False)
+#         experience_model = loadModel(who=who, date=one_evolution_date, prior=False)
 
-        complete_model = loadModel(who=who, date=one_evolution_date, prior=True)
+#         complete_model = loadModel(who=who, date=one_evolution_date, prior=True)
 
-        tabula_rasa_model = loadModel(who=who, tabular=True)
+#         tabula_rasa_model = loadModel(who=who, tabular=True)
 
-        state_attribute = SIRLU.load_state_attrs(who, before=False)
+#         state_attribute = SIRLU.load_state_attrs(who, before=False)
         
-        mse_pr, acc_pr = modelEvaluation(prior_model, who, start_date, end_date, mode='action', coords_id=id_coords_mapping)
-        mse_exp, acc_exp = modelEvaluation(experience_model, who, start_date, end_date, mode='action', coords_id=id_coords_mapping)
-        mse_both, acc_both = modelEvaluation(complete_model, who, start_date, end_date, mode='action', coords_id=id_coords_mapping)
-        mse_non, acc_non = modelEvaluation(tabula_rasa_model, who, start_date, end_date, mode='action', coords_id=id_coords_mapping)
+#         mse_pr, acc_pr = modelEvaluation(prior_model, who, start_date, end_date, mode='action', coords_id=id_coords_mapping)
+#         mse_exp, acc_exp = modelEvaluation(experience_model, who, start_date, end_date, mode='action', coords_id=id_coords_mapping)
+#         mse_both, acc_both = modelEvaluation(complete_model, who, start_date, end_date, mode='action', coords_id=id_coords_mapping)
+#         mse_non, acc_non = modelEvaluation(tabula_rasa_model, who, start_date, end_date, mode='action', coords_id=id_coords_mapping)
         
-        # compute the contribution based on mse, according to nexus paper
-        pr_log_contrib = 0.5 * (np.log10(mse_exp/mse_both) + np.log10(mse_non/mse_pr))
-        pr_log_contrib_list.append(pr_log_contrib)
-        exp_log_contrib = 0.5 * (np.log10(mse_pr/mse_both) + np.log10(mse_non/mse_exp))
-        exp_log_contrib_list.append(exp_log_contrib)
+#         # compute the contribution based on mse, according to nexus paper
+#         pr_log_contrib = 0.5 * (np.log10(mse_exp/mse_both) + np.log10(mse_non/mse_pr))
+#         pr_log_contrib_list.append(pr_log_contrib)
+#         exp_log_contrib = 0.5 * (np.log10(mse_pr/mse_both) + np.log10(mse_non/mse_exp))
+#         exp_log_contrib_list.append(exp_log_contrib)
 
-        # compute the contribution based on accuracy
-        pr_contrib = 0.5 * (acc_both - acc_exp + acc_pr - acc_non)
-        pr_contrib_list.append(pr_contrib)
-        exp_contrib = 0.5 * (acc_both - acc_pr + acc_exp - acc_non)
-        exp_contrib_list.append(exp_contrib)
+#         # compute the contribution based on accuracy
+#         pr_contrib = 0.5 * (acc_both - acc_exp + acc_pr - acc_non)
+#         pr_contrib_list.append(pr_contrib)
+#         exp_contrib = 0.5 * (acc_both - acc_pr + acc_exp - acc_non)
+#         exp_contrib_list.append(exp_contrib)
         
-    # result in the form of a dataframe
-    result_df = pd.DataFrame({'date': evoludate[:len(pr_contrib_list)], 
-                              'pr_acc_contrib': pr_contrib_list, 
-                              'exp_acc_contrib': exp_contrib_list, 
-                              'pr_mse_contrib': pr_log_contrib_list, 
-                              'exp_mse_contrib': exp_log_contrib_list})
+#     # result in the form of a dataframe
+#     result_df = pd.DataFrame({'date': evoludate[:len(pr_contrib_list)], 
+#                               'pr_acc_contrib': pr_contrib_list, 
+#                               'exp_acc_contrib': exp_contrib_list, 
+#                               'pr_mse_contrib': pr_log_contrib_list, 
+#                               'exp_mse_contrib': exp_log_contrib_list})
     
-    return result_df
+#     return result_df
 
 
 def stepwise_kl_div_compute(df_1: pd.DataFrame, df_2: pd.DataFrame):
@@ -201,7 +201,7 @@ def personInterpretEvaluation(who: int, period: str = 'future'):
 
     visitdate = traveler.visit_date
     # create a list of dates for evolution evaluation
-    evoludate = list(filter(lambda d: d > migrtdate, visitdate))
+    evoludate = list(filter(lambda d: d >= migrtdate, visitdate))
     # create buffer range: 10 future days and the date itself
     evolution_buffer = 10 + 1
 
@@ -209,7 +209,10 @@ def personInterpretEvaluation(who: int, period: str = 'future'):
     exp_contrib_list = []
     pr_contrib_list = []
     acu_contrib_list = []
-    for one_evolution_date in evoludate:
+    for i, one_evolution_date in enumerate(evoludate):
+        # for sparse evaluation, only evaluate every 10th evolution date
+        if i % 10 != 0:
+            continue
         # find the position of the evolution date
         evolution_pos = evoludate.index(one_evolution_date)
         print("The evolution date is: ", one_evolution_date)
@@ -276,25 +279,27 @@ if __name__ == "__main__":
     
     wholist = [int(f) for f in os.listdir('./model/') if f.isdigit()]
     wholist.sort()
+    wholist = wholist[:1]
     params_list = [(who, 'total') for who in wholist]
     '''
     Parallel Verison
     '''
-    # import multiprocessing as mp
-    # CPU_COUNT = len(wholist)
-    # # CPU_COUNT = 16
-    # with mp.Pool(CPU_COUNT) as pool:
-    #     iterDfs = pool.starmap(personInterpretEvaluation, params_list)
+    import multiprocessing as mp
+    CPU_COUNT = len(wholist)
+    # CPU_COUNT = 16
+    mp.set_start_method('spawn', force=True)
+    with mp.Pool(CPU_COUNT) as pool:
+        iterDfs = pool.starmap(personInterpretEvaluation, params_list)
 
-    # with open('./product/iterationEvo_TOTAL.pkl', 'wb') as file:
-    #     pickle.dump(iterDfs, file)
+    with open('./product/iterationEvo_TOTAL.pkl', 'wb') as file:
+        pickle.dump(iterDfs, file)
     
     '''
     Hand Version
     '''
-    i = 0
-    who = wholist[i]
-    res = dict()
-    res[who] = personInterpretEvaluation(who, 'total')    
-    with open('./product/interpretEvo_{:09d}.pkl'.format(i), 'wb') as file:
-        pickle.dump(res, file)    
+    # i = 0
+    # who = wholist[i]
+    # res = dict()
+    # res[who] = personInterpretEvaluation(who, 'total')    
+    # with open('./product/interpretEvo_{:09d}.pkl'.format(who), 'wb') as file:
+    #     pickle.dump(res, file)    
