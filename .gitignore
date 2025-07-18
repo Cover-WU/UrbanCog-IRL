@@ -68,7 +68,7 @@ Thumbs.db
 *.db
 
 # models and products
-model/
+model*/
 product/
 data/
 data_pub/
