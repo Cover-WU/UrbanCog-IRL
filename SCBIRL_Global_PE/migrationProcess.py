@@ -99,7 +99,7 @@ def afterMigrt(model, dataPath, outputPath, start_date, iter_type):
         os.makedirs(modelDir)
     memory_buffer = 10 - 1 
 
-    for i in range(0, len(trajIterChains), 10):
+    for i in range(0, len(trajIterChains), 1):
 
         if i < memory_buffer:
             iter_training_set = trajInitChains[-(memory_buffer-i):] + trajIterChains[:i]
@@ -114,7 +114,7 @@ def afterMigrt(model, dataPath, outputPath, start_date, iter_type):
         # change
         # weights = [1 / 2 ** (memory_buffer - i) for i in range(memory_buffer)]
         weights = None
-        model.train(iters=1000, loss_threshold=0.005, weights=weights)
+        model.train(iters=1000, loss_threshold=0.005, weights=weights, prior=True)
 
         # Save the current model state.
         modelSavePath = modelDir + model_tag + '_model_' + str(iter_training_set[-1].date) + ".pickle"

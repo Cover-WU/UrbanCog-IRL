@@ -400,7 +400,7 @@ class avril:
 
         if self.load_params:
             # 有先验迭代
-            e_params_pre, _, _ = self.pre_params
+            e_params_pre, _ = self.pre_params
             means_pre, log_sds_pre , _ = getRewardParameters(e_params_pre, 0)
             means_pre, log_sds_pre = means_pre[valid_indices], log_sds_pre[valid_indices]
             kl = kl_divergence(means, np.exp(log_sds), means_pre, np.exp(log_sds_pre))
@@ -432,7 +432,7 @@ class avril:
         return neg_log_lik + kl + lambda_value * irl_loss
     
     def train(self, iters: int = 1000, batch_size: int = 64, l_rate: float = 1e-4, 
-              loss_threshold: float = 0.01, weights = None):
+              loss_threshold: float = 0.01, weights = None, prior: bool = False):
         """
         Training function for the model.
 
@@ -451,6 +451,11 @@ class avril:
         positions = self.positions  # 这里获取经纬度坐标
         if weights is not None:
             weights_array = np.array(weights)
+        
+        if prior:
+            # 如果是prior迭代，使用之前的参数
+            self.load_params = True
+            self.pre_params = self.params
         
         init_fun, update_fun, get_params = optimizers.adam(l_rate)
         update_fun = jit(update_fun)

@@ -156,6 +156,52 @@ def save_intermediate_results(results, filename):
         pickle.dump(results, f)
 
 
+# def temp_evaluate_continue(who, date, iter_type='recent'):
+#     data_dir = UserDataPart + '{:09d}/'.format(who)
+#     model_dir = 'model/{:09d}/'.format(who)
+#     iter_start_date = SIRLU.load_traveler(who).iter_start_date
+    
+#     if iter_type == 'recent':
+#         model_tag = 'iterated'
+#         folder_name = "evolution_model/"
+#     else:
+#         model_tag = 'increased'
+#         folder_name = 'empirical_model/'
+    
+#     visitedState, trajInitChains, trajIterChains, stateAttribute = SIRLP.readAndPrepareData(data_dir, start_date=iter_start_date)
+#     modelDir = model_dir + folder_name
+#     memory_buffer = 10 - 1 
+    
+#     inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+#     mapping_dict = SIRLU.create_coords_utm_mapping(who)
+#     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True, coords_proj=mapping_dict)
+#     model.loadParams(modelDir + model_tag + '_model_' + str(date) + ".pickle")
+    
+#     # search the index of the date in trajIterChains
+#     date_list = [x.date for x in trajIterChains]
+#     start = date_list.index(date) + 1
+#     for i in range(start, len(trajIterChains), 1):
+
+#         if i < memory_buffer:
+#             iter_training_set = trajInitChains[-(memory_buffer-i):] + trajIterChains[:i]
+#         else:
+#             iter_training_set = trajIterChains[i-memory_buffer:i]
+#         iter_training_set = iter_training_set + [trajIterChains[i]]
+
+#         # Process and calculate reward values after migration.
+#         SIRLU.plugInDataPair(iter_training_set, stateAttribute, model, visitedState)
+
+#         # Train the model.
+#         # change
+#         # weights = [1 / 2 ** (memory_buffer - i) for i in range(memory_buffer)]
+#         weights = None
+#         model.train(iters=1000, loss_threshold=0.005, weights=weights)
+
+#         # Save the current model state.
+#         modelSavePath = modelDir + model_tag + '_model_' + str(iter_training_set[-1].date) + ".pickle"
+#         model.modelSave(modelSavePath)
+
+
 if __name__ =="__main__":
     '''
         Iteration Version
@@ -201,4 +247,7 @@ if __name__ =="__main__":
     '''
         Terminal Version
     '''
-    # train_model_one_traveler(who = 1102234)
+    # train_model_one_traveler(who = 6945721)
+    
+    
+    # temp_evaluate_continue(who = 6945721, iter_type='recent', date=20231210)
