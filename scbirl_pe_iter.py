@@ -5,7 +5,7 @@ import logging
 import SCBIRL_Global_PE.SCBIRLTransformer as SIRLT
 import SCBIRL_Global_PE.utils as SIRLU
 import SCBIRL_Global_PE.migrationProcess as SIRLP
-import Analysis.priorKnow as PriorKnow
+# import Analysis.priorKnow as PriorKnow
 from SCBIRL_Global_PE.utils import Traveler, UserDataPart
 # from Analysis.comparison_models import avril_without_pe
 
@@ -20,6 +20,39 @@ from tqdm.auto import tqdm
 
 def train_model_one_traveler(who: int):
     data_dir = UserDataPart + '{:09d}/'.format(who)
+    model_dir = 'model_training_by_day_with_prior/{:09d}/'.format(who)
+    
+    iter_start_date = SIRLU.load_traveler(who).iter_start_date
+    # here the `iter_start_date` is a constant defined by utility module.
+    inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    logging.debug(inputs.shape, targets_action.shape, positions.shape)
+    mapping_dict = SIRLU.create_coords_utm_mapping(who)
+    # tabular rasa model
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True, coords_proj=mapping_dict)
+
+    # model with no prior knowledge, just nearest experience
+    # if the training is interrupted, we can resume the training from the last date.
+    SIRLP.iterative_model_training(model, data_dir, model_dir, start_date = iter_start_date, prior_iter=False, 
+                                   by_weekend=False)
+    # NOTE: Compute rewards after migration
+    model_no_prior = copy.deepcopy(model)
+    # from the tabular rasa, iteratively update the model with accumulated experience
+    SIRLP.iterative_model_training(model_no_prior, data_dir, model_dir, start_date = iter_start_date, prior_iter=True, 
+                                   iter_type='incremental', by_weekend=False)
+
+    # NOTE: train the model before migration
+    model.train(iters=1000, loss_threshold=0.001)
+    model_repo_establishment(model, model_dir)
+    model_save_path = model_dir + 'initial_model.pickle'
+    model.modelSave(model_save_path)
+
+    # NOTE: Compute rewards after migration
+    SIRLP.iterative_model_training(model, data_dir, model_dir, start_date = iter_start_date, prior_iter=True, 
+                                   iter_type='recent', by_weekend=False)
+
+
+def train_model_one_traveler_old(who: int):
+    data_dir = UserDataPart + '{:09d}/'.format(who)
     model_dir = 'model/{:09d}/'.format(who)
     
     iter_start_date = SIRLU.load_traveler(who).iter_start_date
@@ -32,11 +65,13 @@ def train_model_one_traveler(who: int):
 
     # model with no prior knowledge, just nearest experience
     # if the training is interrupted, we can resume the training from the last date.
-    PriorKnow.experienceModel(model, data_dir, model_dir, start_date = iter_start_date)
+    SIRLP.afterMigrt(model, data_dir, model_dir, start_date = iter_start_date, prior_iter=False, 
+                     by_weekend=True)
     # NOTE: Compute rewards after migration
     model_no_prior = copy.deepcopy(model)
     # from the tabular rasa, iteratively update the model with accumulated experience
-    SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, iter_type='prior')
+    SIRLP.afterMigrt(model_no_prior, data_dir, model_dir, start_date = iter_start_date, prior_iter=True, 
+                     iter_type='incremental', by_weekend=True)
 
     # NOTE: train the model before migration
     model.train(iters=1000, loss_threshold=0.001)
@@ -45,7 +80,8 @@ def train_model_one_traveler(who: int):
     model.modelSave(model_save_path)
 
     # NOTE: Compute rewards after migration
-    SIRLP.afterMigrt(model, data_dir, model_dir, start_date = iter_start_date, iter_type='recent')
+    SIRLP.afterMigrt(model, data_dir, model_dir, start_date = iter_start_date, prior_iter=True, 
+                     iter_type='recent', by_weekend=True)
 
 
 def model_repo_establishment(model: SIRLT.avril, path: str):
@@ -99,7 +135,7 @@ def train_models_parallel(who_list, n_workers=32, threads_per_worker=4):
         delayed_tasks = []
         for who in who_list:
             # Wrap the training function in delayed
-            train_model_dask = dask.delayed(train_model_one_traveler)
+            train_model_dask = dask.delayed(train_model_one_traveler_weekend_scheme)
             task = train_model_dask(who)
             delayed_tasks.append(task)
         
@@ -156,50 +192,50 @@ def save_intermediate_results(results, filename):
         pickle.dump(results, f)
 
 
-# def temp_evaluate_continue(who, date, iter_type='recent'):
-#     data_dir = UserDataPart + '{:09d}/'.format(who)
-#     model_dir = 'model/{:09d}/'.format(who)
-#     iter_start_date = SIRLU.load_traveler(who).iter_start_date
+def temp_evaluate_continue(who, date, iter_type='recent'):
+    data_dir = UserDataPart + '{:09d}/'.format(who)
+    model_dir = 'model/{:09d}/'.format(who)
+    iter_start_date = SIRLU.load_traveler(who).iter_start_date
     
-#     if iter_type == 'recent':
-#         model_tag = 'iterated'
-#         folder_name = "evolution_model/"
-#     else:
-#         model_tag = 'increased'
-#         folder_name = 'empirical_model/'
+    if iter_type == 'recent':
+        model_tag = 'iterated'
+        folder_name = "evolution_model/"
+    else:
+        model_tag = 'increased'
+        folder_name = 'empirical_model/'
     
-#     visitedState, trajInitChains, trajIterChains, stateAttribute = SIRLP.readAndPrepareData(data_dir, start_date=iter_start_date)
-#     modelDir = model_dir + folder_name
-#     memory_buffer = 10 - 1 
+    visitedState, trajInitChains, trajIterChains, stateAttribute = SIRLP.readAndPrepareData(data_dir, start_date=iter_start_date)
+    modelDir = model_dir + folder_name
+    memory_buffer = 10 - 1 
     
-#     inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-#     mapping_dict = SIRLU.create_coords_utm_mapping(who)
-#     model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True, coords_proj=mapping_dict)
-#     model.loadParams(modelDir + model_tag + '_model_' + str(date) + ".pickle")
+    inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    mapping_dict = SIRLU.create_coords_utm_mapping(who)
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True, coords_proj=mapping_dict)
+    model.loadParams(modelDir + model_tag + '_model_' + str(date) + ".pickle")
     
-#     # search the index of the date in trajIterChains
-#     date_list = [x.date for x in trajIterChains]
-#     start = date_list.index(date) + 1
-#     for i in range(start, len(trajIterChains), 1):
+    # search the index of the date in trajIterChains
+    date_list = [x.date for x in trajIterChains]
+    start = date_list.index(date) + 1
+    for i in range(start, len(trajIterChains), 1):
 
-#         if i < memory_buffer:
-#             iter_training_set = trajInitChains[-(memory_buffer-i):] + trajIterChains[:i]
-#         else:
-#             iter_training_set = trajIterChains[i-memory_buffer:i]
-#         iter_training_set = iter_training_set + [trajIterChains[i]]
+        if i < memory_buffer:
+            iter_training_set = trajInitChains[-(memory_buffer-i):] + trajIterChains[:i]
+        else:
+            iter_training_set = trajIterChains[i-memory_buffer:i]
+        iter_training_set = iter_training_set + [trajIterChains[i]]
 
-#         # Process and calculate reward values after migration.
-#         SIRLU.plugInDataPair(iter_training_set, stateAttribute, model, visitedState)
+        # Process and calculate reward values after migration.
+        SIRLU.plugInDataPair(iter_training_set, stateAttribute, model, visitedState)
 
-#         # Train the model.
-#         # change
-#         # weights = [1 / 2 ** (memory_buffer - i) for i in range(memory_buffer)]
-#         weights = None
-#         model.train(iters=1000, loss_threshold=0.005, weights=weights)
+        # Train the model.
+        # change
+        # weights = [1 / 2 ** (memory_buffer - i) for i in range(memory_buffer)]
+        weights = None
+        model.train(iters=1000, loss_threshold=0.005, weights=weights, prior=True)
 
-#         # Save the current model state.
-#         modelSavePath = modelDir + model_tag + '_model_' + str(iter_training_set[-1].date) + ".pickle"
-#         model.modelSave(modelSavePath)
+        # Save the current model state.
+        modelSavePath = modelDir + model_tag + '_model_' + str(iter_training_set[-1].date) + ".pickle"
+        model.modelSave(modelSavePath)
 
 
 if __name__ =="__main__":
@@ -229,10 +265,11 @@ if __name__ =="__main__":
     file_list = os.listdir(UserDataPart)
     # Example who_list
     who_list = [int(pid) for pid in file_list]
-    # who_list = [68058890, 10013454, 58272403,
-    #              6945721, 71209087, 93854949,
-    #             82455786, 58124481, 54636959,
-    #              1102234, 25679537,102181433]  # Limit to 10 travelers for testing
+    # who_list = [ 1102234,  4116450,  6945721,
+    #             23951036, 26564845, 44777185,
+    #             47319758, 58124481, 68058890,
+    #             71209087, 76012062, 82455786,
+    #             83227330, 93854949]  # Limit to 10 travelers for testing
     
     # Configure Dask for your hardware
     n_workers = min(32, len(who_list))  # Number of CPU cores
@@ -247,7 +284,6 @@ if __name__ =="__main__":
     '''
         Terminal Version
     '''
-    # train_model_one_traveler(who = 6945721)
-    
-    
-    # temp_evaluate_continue(who = 6945721, iter_type='recent', date=20231210)
+    # train_model_one_traveler(who = 54636959)    
+    # temp_evaluate_continue(who = 54636959, iter_type='prior', date=20230909)
+    # train_model_one_traveler_weekend_scheme(who = 1102234)

@@ -10,11 +10,11 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
-from SCBIRL_Global_PE.utils import UserDataPart, load_fnid_coords_mapping, loadModel
+from SCBIRL_Global_PE.utils import UserDataPart, load_fnid_coords_mapping, loadModel, toWhoString
 from SCBIRL_Global_PE.migrationProcess import readAndPrepareData
 
-def mentalMap(who, date):
-    model = loadModel(who, date)
+def mentalMap(who, date, model_dir='./model/'):
+    model = loadModel(who, date, model_dir=model_dir)
     
     # read the geodataframe
     path = './data/city_grid_features/city_grid_features.geojson'
@@ -25,19 +25,23 @@ def mentalMap(who, date):
     BE_features = city_grid_with_LU.loc[:, feature_name].to_numpy()
     
     # please note: the feature should be preprocessed 
-    dataPath = UserDataPart + '{:09d}/'.format(who)
-    visit_coords, *_ = readAndPrepareData(dataPath, date)
-    coords_fnid_mapping = load_fnid_coords_mapping(who)
-    visit_fnid = [coords_fnid_mapping[coord] for coord in visit_coords]
+    # dataPath = UserDataPart + '{:09d}/'.format(who)
+    # visit_coords, *_ = readAndPrepareData(dataPath, date)
+    # coords_fnid_mapping = load_fnid_coords_mapping(who)
+    # visit_fnid = [coords_fnid_mapping[coord] for coord in visit_coords]
     # convert the feature GeoDataFrame to DataFrame by drop the geometry column
-    city_grid_only_features = pd.DataFrame(city_grid_with_LU.drop(columns='geometry'))
+    # city_grid_only_features = pd.DataFrame(city_grid_with_LU.drop(columns='geometry'))
     # get the feature values of the visited locations
-    visited_features = city_grid_only_features.loc[city_grid_with_LU.fnid.isin(visit_fnid), feature_name].to_numpy()
+    # visited_features = city_grid_only_features.loc[city_grid_with_LU.fnid.isin(visit_fnid), feature_name].to_numpy()
     # get the feature minimum and maximum values
-    visited_features_min = visited_features.min(axis=0)
-    visited_features_max = visited_features.max(axis=0)
+    # features_min = visited_features.min(axis=0)
+    # features_max = visited_features.max(axis=0)
+
+    path = UserDataPart + toWhoString(who) + '/' + 'all_traj_feature.csv'
+    built_attr = pd.read_csv(path)
+    features_min, features_max = built_attr[feature_name].min().to_numpy(), built_attr[feature_name].max().to_numpy()
     # normalize the features
-    BE_features = (BE_features - visited_features_min) / (visited_features_max - visited_features_min)
+    BE_features = (BE_features - features_min) / (features_max - features_min)
     
     # compute the grid centroid and convert it to grid code
     grid_locations = city_grid_with_LU.geometry.centroid

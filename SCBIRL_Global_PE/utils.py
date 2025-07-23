@@ -50,13 +50,13 @@ def loadTravelChainAll(who: int):
     return chains_loaded
     
 
-def loadModel(who, date = None, prior = True, accumulate = False, tabular = False, use_utm=True):
+def loadModel(who, date = None, prior = True, accumulate = False, tabular = False, use_utm=True, model_dir='./model/'):
     '''
         Load the model from the model directory.
         Must correctly set the directory at first.
     '''
     data_dir = UserDataPart + toWhoString(who) + '/'
-    model_dir = './model/' + toWhoString(who) + '/'
+    model_dir = model_dir + toWhoString(who) + '/'
     
     iter_start_date = load_traveler(who).iter_start_date
     inputs, targets_action, positions, action_dim, state_dim = loadTrajChain(data_dir, type='before', start_date=iter_start_date)

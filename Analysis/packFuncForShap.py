@@ -156,12 +156,12 @@ def sparseBackground(dataset: np.array, visited_id: list = None):
     return background_uni, background_weight, background_iden
     
 
-def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = True):
+def modelRewardExplain(date: int, who: int, binary_be_vs_loc = True, blank = True, model_dir = './model/'):
     '''
         Give the SHAP value by grouping the type.
     '''
     print('Explaining person: {who:9d}, date: {date}'.format(who=who, date=date))
-    model = SIRLU.loadModel(who=who, date=date)
+    model = SIRLU.loadModel(who=who, date=date, model_dir=model_dir)
 
     dataset, visited_id = backgroundData(who=who, date=date)
     dataset_uni, dataset_freq, dataset_iden = sparseBackground(dataset, visited_id)
@@ -219,7 +219,7 @@ def modelUserDateCombination(by_week=True):
     Extract the user and date combination from the model directory.
     Each target for every seven days.
     '''
-    model_dir = './model/'
+    # model_dir = './model/'
     # list all users with folder name consisting of all digits.
     # note: change here
     user_list = [name for name in os.listdir(model_dir) if name.isdigit()]
@@ -228,7 +228,7 @@ def modelUserDateCombination(by_week=True):
     for user in user_list:
         evolution_model_path = model_dir + user + '/' + 'evolution_model/'
         date_list = [int(params.rstrip('.pickle')[-8:]) for params in os.listdir(evolution_model_path)]
-        date_list = SIRLU.extract_week_ends(date_list)[0] if by_week else date_list[::7] # similarly we can change to 1
+        date_list = SIRLU.extract_week_ends(date_list)[0] if by_week else date_list[::1] # similarly we can change to 1
         for date in date_list:
             combination.append((int(user), date))
     return combination
@@ -239,14 +239,14 @@ def modelDateOfUser(user, by_week = True):
     Extract the date list of the user.
     Each target for every seven days.
     '''
-    model_dir = './model/'
+    # model_dir = './model/'
     user = SIRLU.toWhoString(user)
     evolution_model_path = model_dir + user + '/' + 'evolution_model/'
     date_list = [int(params.rstrip('.pickle')[-8:]) for params in os.listdir(evolution_model_path)]
     if by_week:
         date_list, _ = SIRLU.extract_week_ends(date_list)
     else:
-        date_list = date_list[::7] # if the model is not continuously trained, change 7 to 1.
+        date_list = date_list[::1] # if the model is not continuously trained, change 7 to 1.
     return date_list
 
 def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):
@@ -256,11 +256,12 @@ def explainOneUser(user, parallel=False, binary_be_vs_loc=True, blank=True):
         shap_dict = dict()
         # add reverse to mitigate the load balancing problem.
         for date in reversed(date_list):
-            shap_dict[date] = modelRewardExplain(date, who=user, binary_be_vs_loc=binary_be_vs_loc, blank=blank)
+            shap_dict[date] = modelRewardExplain(date, who=user, binary_be_vs_loc=binary_be_vs_loc, blank=blank, 
+                                                 model_dir=model_dir)
     else:
         # parallel version
-        CPU_COUNT = min(len(date_list), mp.cpu_count() - 1)
-        combination = [(date, user, binary_be_vs_loc, blank) for date in reversed(date_list)]
+        CPU_COUNT = min(len(date_list),30)
+        combination = [(date, user, binary_be_vs_loc, blank, model_dir) for date in reversed(date_list)]
         # set start method to spawn to avoid the error of fork
         mp.set_start_method('spawn', force=True)
         with mp.Pool(CPU_COUNT) as pool:
@@ -287,12 +288,12 @@ def explainAllRewards(parallel = False, binary_be_vs_loc=True, blank=True):
             shap_dict[(user, date)] = shap_dict_values[idx]
     return shap_dict
 
-def modelRewardBaselineCalculation(date: int, who: int):
+def modelRewardBaselineCalculation(date: int, who: int, model_dir = './model/'):
     '''
         Give the SHAP value by grouping the type.
     '''
     print('Explaining person: {who:8d}, date: {date}'.format(who=who, date=date))
-    model = SIRLU.loadModel(who=who, date=date)
+    model = SIRLU.loadModel(who=who, date=date, model_dir=model_dir)
     # modelPredWrapper = partial(modelPredict, model=model, attribute_type='reward')
 
     dataset, visited_id = backgroundData(who=who, date = date)
@@ -325,18 +326,18 @@ if __name__ == '__main__':
     '''
     Half Parallel Version
     '''
-    model_dir = './model/'
+    model_dir = './model_training_weekend_with_prior/'
     user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
     user_list.sort()
     for user in user_list:
         # note: remember to change back
         res = explainOneUser(user, parallel=True, binary_be_vs_loc=False, blank=True)
-        with open('./product/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
+        with open('./product/shap_weekend/shap_res_{:09d}.pkl'.format(user), 'wb') as f:
             pickle.dump(res, f)
     '''
     By Hand
     '''
-    # model_dir = './model/'
+    # model_dir = './model_training_skip_10_with_prior/'
     # user_list = [int(name) for name in os.listdir(model_dir) if name.isdigit()]
     # user_list.sort()
 

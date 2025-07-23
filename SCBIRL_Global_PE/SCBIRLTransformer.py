@@ -190,7 +190,7 @@ class avril:
             print("save params to {}!".format(model_save_path))
             pickle.dump(self.params, f, protocol=pickle.HIGHEST_PROTOCOL) 
     
-    def loadParams(self,model_path):
+    def loadParams(self, model_path):
         print("load params from {}!".format(model_path))
         with open(model_path, 'rb') as f:    
             self.load_params = True
