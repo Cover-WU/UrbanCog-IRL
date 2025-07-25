@@ -1,8 +1,8 @@
 import jax.numpy as np
-
 import numpy as onp
 import pickle
 import os
+import time
 import copy 
 import pandas as pd
 from tqdm import tqdm
@@ -61,7 +61,7 @@ def readAndPrepareData(user_data_path, start_date):
 
     return visitedState, trajInitChains, trajIterChains, stateAttribute
 
-def afterMigrt(model, dataPath, outputPath, start_date, iter_type, prior_iter=True, by_weekend=False):
+def afterMigrt(model, dataPath, outputPath, start_date, prior_iter=True, iter_type=None, by_weekend=False):
     '''
     Iteratively train the model with real traj data.
     '''

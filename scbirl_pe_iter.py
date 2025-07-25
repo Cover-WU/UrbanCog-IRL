@@ -1,5 +1,6 @@
 import pickle
 import copy
+import time
 import os
 import logging
 import SCBIRL_Global_PE.SCBIRLTransformer as SIRLT
@@ -20,8 +21,7 @@ from tqdm.auto import tqdm
 
 def train_model_one_traveler(who: int):
     data_dir = UserDataPart + '{:09d}/'.format(who)
-    model_dir = 'model_training_by_day_with_prior/{:09d}/'.format(who)
-    
+    model_dir = '/root/autodl-tmp/model_weekend_hundred/{:09d}/'.format(who)
     iter_start_date = SIRLU.load_traveler(who).iter_start_date
     # here the `iter_start_date` is a constant defined by utility module.
     inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
@@ -33,12 +33,12 @@ def train_model_one_traveler(who: int):
     # model with no prior knowledge, just nearest experience
     # if the training is interrupted, we can resume the training from the last date.
     SIRLP.iterative_model_training(model, data_dir, model_dir, start_date = iter_start_date, prior_iter=False, 
-                                   by_weekend=False)
+                                   by_weekend=True)
     # NOTE: Compute rewards after migration
     model_no_prior = copy.deepcopy(model)
     # from the tabular rasa, iteratively update the model with accumulated experience
     SIRLP.iterative_model_training(model_no_prior, data_dir, model_dir, start_date = iter_start_date, prior_iter=True, 
-                                   iter_type='incremental', by_weekend=False)
+                                   iter_type='incremental', by_weekend=True)
 
     # NOTE: train the model before migration
     model.train(iters=1000, loss_threshold=0.001)
@@ -48,7 +48,7 @@ def train_model_one_traveler(who: int):
 
     # NOTE: Compute rewards after migration
     SIRLP.iterative_model_training(model, data_dir, model_dir, start_date = iter_start_date, prior_iter=True, 
-                                   iter_type='recent', by_weekend=False)
+                                   iter_type='recent', by_weekend=True)
 
 
 def train_model_one_traveler_old(who: int):
@@ -135,7 +135,7 @@ def train_models_parallel(who_list, n_workers=32, threads_per_worker=4):
         delayed_tasks = []
         for who in who_list:
             # Wrap the training function in delayed
-            train_model_dask = dask.delayed(train_model_one_traveler_weekend_scheme)
+            train_model_dask = dask.delayed(train_model_one_traveler)
             task = train_model_dask(who)
             delayed_tasks.append(task)
         
@@ -262,28 +262,28 @@ if __name__ =="__main__":
     '''
         Professional Parallel Version
     '''
-    file_list = os.listdir(UserDataPart)
-    # Example who_list
-    who_list = [int(pid) for pid in file_list]
-    # who_list = [ 1102234,  4116450,  6945721,
-    #             23951036, 26564845, 44777185,
-    #             47319758, 58124481, 68058890,
-    #             71209087, 76012062, 82455786,
-    #             83227330, 93854949]  # Limit to 10 travelers for testing
+    # file_list = os.listdir(UserDataPart)
+    # # Example who_list
+    # who_list = [int(pid) for pid in file_list]
+    # # who_list = [ 1102234,  4116450,  6945721,
+    # #             23951036, 26564845, 44777185,
+    # #             47319758, 58124481, 68058890,
+    # #             71209087, 76012062, 82455786,
+    # #             83227330, 93854949]  # Limit to 10 travelers for testing
     
-    # Configure Dask for your hardware
-    n_workers = min(32, len(who_list))  # Number of CPU cores
-    threads_per_worker = 4  # Threads per worker (128/32 = 4)
+    # # Configure Dask for your hardware
+    # n_workers = min(30, len())  # Number of CPU cores
+    # threads_per_worker = 4  # Threads per worker (128/32 = 4)
     
-    # Train models with batch processing
-    results = train_model_batch(
-        who_list,
-        batch_size=n_workers  # Adjust based on memory requirements
-    )
+    # # Train models with batch processing
+    # results = train_model_batch(
+    #     who_list,
+    #     batch_size=n_workers  # Adjust based on memory requirements
+    # )
     
     '''
         Terminal Version
     '''
-    # train_model_one_traveler(who = 54636959)    
+    train_model_one_traveler(who = 661336)    
     # temp_evaluate_continue(who = 54636959, iter_type='prior', date=20230909)
     # train_model_one_traveler_weekend_scheme(who = 1102234)

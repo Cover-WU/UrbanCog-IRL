@@ -1,26 +1,38 @@
 import os
-import numpy as np
+import sys
 import pickle
-import pandas as pd
 from tqdm import tqdm
 from collections import defaultdict
+
+import numpy as np
+import pandas as pd
 from sklearn.metrics import accuracy_score
 from scipy.special import softmax
-
+import jax
+import jax.numpy as jnp
 # 需要用到的包
 from nltk.translate.bleu_score import sentence_bleu
 from rouge import Rouge
 import editdistance
 
+# 设置系统路径
+working_directory = os.path.abspath('.')
+sys.path.append(working_directory)
+
 import SCBIRL_Global_PE.utils as SIRLU
 import SCBIRL_Global_PE.SCBIRLTransformer as SIRLT
-from SCBIRL_Global_PE.utils import Padding
+from SCBIRL_Global_PE.utils import Padding, UserDataPart
 from Analysis.topoMap import clusterLocationsSimple
 
-MODEL_DIR = './model/'
+MODEL_DIR = './model/model_training_weekend_with_prior/'
 USER_DATA_DIR = SIRLU.UserDataPart
 
 # ========== 工具函数 ==========
+
+def jax_shuffle(x, rng):
+    idx = jax.random.permutation(rng, x.shape[0])
+    return x[idx]
+
 def get_evolution_model_paths(who):
     """返回该用户所有evolution_model的路径和日期列表"""
     who_str = SIRLU.toWhoString(who)
@@ -35,28 +47,36 @@ def get_evolution_model_paths(who):
     date_model = sorted(zip(date_list, model_paths))
     return date_model
 
-def get_next_day_traj(who, date):
+def get_next_day_traj(who, date, date_list):
     """获取date之后一天的所有轨迹（list of TravelData）"""
+    date_idx = date_list.index(date)
+    start_date = date
+    if date_idx + 1 == len(date_list):
+        return []
+    end_date = date_list[date_idx + 1]
     all_traj = SIRLU.load_all_traj(who)
     # 找到第一个date等于给定date的tc的索引
-    idx_list = [i for i, tc in enumerate(all_traj) if tc.date == date]
-    if not idx_list:
-        # 报告一个warning
-        print(f"Warning: No date {date} for user {who}.")
-        return []
-    elif idx_list[0] + 1 == len(all_traj): 
-        return []
-    else:
-        return [all_traj[idx_list[0] + 1]]
+    training_list = [tc for tc in all_traj if start_date < tc.date <= end_date]
+    return training_list
 
-def get_this_day_traj(who, date):
+def get_this_day_traj(who, date, date_list):
     """获取date当天所有轨迹（list of TravelData）"""
+    date_idx = date_list.index(date)
     all_traj = SIRLU.load_all_traj(who)
-    return [tc for tc in all_traj if tc.date == date]
+    end_date = date
+    iter_start_date = SIRLU.load_traveler(who).iter_start_date
+    if date_idx == 0:
+        start_date = iter_start_date
+        training_list = [tc for tc in all_traj if start_date <= tc.date <= end_date]
+    else:
+        start_date = date_list[date_idx - 1]
+        # 找到第一个date等于给定date的tc的索引
+        training_list = [tc for tc in all_traj if start_date < tc.date <= end_date]
+    return training_list
 
 def load_id_node_mapping(who):
     """返回id到node的映射（聚类标签）"""
-    labels = clusterLocationsSimple(who)
+    labels = clusterLocationsSimple(who, use_social=False)
     # 在末尾增加一个元素为-1
     mapping = {i: label for i, label in enumerate(labels)}
     mapping[-1] = -1
@@ -86,7 +106,7 @@ def traj_processor(who, trajs):
     traj_inputs = []
     for i in range(len(trajs)):
         state = states[i, :, 0, :]
-        value_mask = ~np.all(state == Padding, axis=0)
+        value_mask = ~np.all(state == Padding, axis=1)
         state = state[value_mask]
         action = actions[i, :, 0, :]
         action = action[value_mask]
@@ -109,13 +129,13 @@ def evaluate_user_model(model, who, id2node, node2ids, next_trajs, today_trajs):
     # 2. Perplexity
     perplex, perplex_n = eval_perplexity(model, next_trajs_input, id2node, node2ids)
     # 3. BLEU/ROUGE
-    bleu, rouge, timespan, n_traj = eval_bleu_rouge(model, who, today_trajs, id2node, node2ids)
+    bleu, rouge, n_traj = eval_bleu_rouge(model, who, next_trajs_input, id2node, node2ids)
     # 4. 编辑距离
-    edit_dist, edit_n = eval_edit_distance(model, who, today_trajs, id2node, node2ids)
+    edit_dist, edit_n = eval_edit_distance(model, who, next_trajs_input, id2node, node2ids)
     return {
         'acc1': acc1, 'acc5': acc5, 'step_n': step_n,
         'perplex': perplex, 'perplex_n': perplex_n,
-        'bleu': bleu, 'rouge': rouge, 'timespan': timespan, 'n_traj': n_traj,
+        'bleu': bleu, 'rouge': rouge, 'n_traj': n_traj,
         'edit_dist': edit_dist, 'edit_n': edit_n
     }
 
@@ -127,12 +147,20 @@ def evaluate_user(who):
     node2ids = group_locations_by_node(id2node)
     one_usr_results = dict()
     date_model = get_evolution_model_paths(who)
-    for date, model_path in tqdm(date_model, desc=f"User {who}"):
+    date_list = [date for date, _ in date_model]
+    
+    iter_start_date = SIRLU.load_traveler(who).iter_start_date
+    data_dir = UserDataPart + '{:09d}/'.format(who)
+    inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    mapping_dict = SIRLU.create_coords_utm_mapping(who)
+    model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True, coords_proj=mapping_dict)
+    for i, (date, model_path) in enumerate(tqdm(date_model, desc=f"User {who}")):
         # 加载模型
-        model = SIRLT.avril(...)
+        if i == len(date_model) - 1:
+            break
         model.loadParams(model_path)
-        next_trajs = get_next_day_traj(who, date)
-        today_trajs = get_this_day_traj(who, date)
+        next_trajs = get_next_day_traj(who, date, date_list)
+        today_trajs = get_this_day_traj(who, date, date_list)
         eval_results = evaluate_user_model(model, who, id2node, node2ids, next_trajs, today_trajs)
         one_usr_results[date] = eval_results
     return one_usr_results
@@ -146,7 +174,8 @@ def eval_topk_accuracy(model, trajs_input, id2node, node2ids, shuffle=True, k=5)
     acc1_hits = 0
     acck_hits = 0
     total_steps = 0
-
+    rng = jax.random.PRNGKey(42)
+    
     for traj_one_day in trajs_input:
         # 正常情况下，trajs本来就是一条轨迹，所以traj_idx=0
         state, action, position = traj_one_day
@@ -156,14 +185,15 @@ def eval_topk_accuracy(model, trajs_input, id2node, node2ids, shuffle=True, k=5)
         # 你可能需要根据你的模型输入格式调整
         state_encode, position_encode = state.copy(), position.copy()
         if shuffle:
-            np.random.shuffle(state_encode)
-            np.random.shuffle(position_encode)
+            rng, key = jax.random.split(rng)
+            state_encode = jax_shuffle(state_encode, key)
+            position_encode = jax_shuffle(position_encode, key)
 
         state_encode_tensor, state_tensor, position_encode_tensor, position_tensor =    \
             state_encode[None, :, None, :], state[None, :, None, :],   \
             position_encode[None, :, None, :], position[None, :, None, :]
         QArray = model.inference_rollout_QValue(state_encode_tensor, position_encode_tensor, state_tensor, position_tensor)
-        QArray = QArray.squeeze(axis=(0, 2))
+        QArray = QArray.squeeze(axis=0)
         # 对每个node内的location做平均
         QNodeArray = np.zeros((len(QArray), len(node2ids)))
         for node, ids in node2ids.items():
@@ -175,7 +205,7 @@ def eval_topk_accuracy(model, trajs_input, id2node, node2ids, shuffle=True, k=5)
         node_probs = softmax(QNodeArray, axis=1)
         # 选择每一行排名前k的node index
         topk_nodes = np.argsort(node_probs)[:, ::-1][:, :k]
-
+        topk_nodes = np.where(topk_nodes == QNodeArray.shape[1] - 1, -1, topk_nodes)
         next_id = action[:, 0]
         next_node = np.array([id2node[int(nid)] for nid in next_id])
         top1_node = topk_nodes[:, 0]
@@ -201,6 +231,7 @@ def eval_perplexity(model, trajs_input, id2node, node2ids, shuffle=False):
     """
     log_prob_sum = 0.0
     total_steps = 0
+    rng = jax.random.PRNGKey(42)
 
     # node_list = sorted(node2ids.keys())
     for traj_one_day in trajs_input:
@@ -208,14 +239,15 @@ def eval_perplexity(model, trajs_input, id2node, node2ids, shuffle=False):
         time_span = len(state)
         state_encode, position_encode = state.copy(), position.copy()
         if shuffle:
-            np.random.shuffle(state_encode)
-            np.random.shuffle(position_encode)
+            rng, key = jax.random.split(rng)
+            state_encode = jax_shuffle(state_encode, key)
+            position_encode = jax_shuffle(position_encode, key)
         state_encode_tensor = state_encode[None, :, None, :]
         state_tensor = state[None, :, None, :]
         position_encode_tensor = position_encode[None, :, None, :]
         position_tensor = position[None, :, None, :]
         QArray = model.inference_rollout_QValue(state_encode_tensor, position_encode_tensor, state_tensor, position_tensor)
-        QArray = QArray.squeeze(axis=(0, 2))
+        QArray = QArray.squeeze(axis=0)
         QNodeArray = np.zeros((len(QArray), len(node2ids)))
         for node, ids in node2ids.items():
             QNodeArray[:, node] = np.mean(QArray[:, ids], axis=1)
@@ -242,8 +274,9 @@ def eval_bleu_rouge(model, who, trajs_input, id2node, node2ids, max_gen_len=None
     """
     bleu_scores = []
     rouge_scores = []
-    traj_timespans = []
+    # traj_timespans = []
     n_traj = 0
+    rng = jax.random.PRNGKey(42)
 
     rouge = Rouge()
     for traj_one_day in trajs_input:
@@ -257,8 +290,9 @@ def eval_bleu_rouge(model, who, trajs_input, id2node, node2ids, max_gen_len=None
 
         state_encode, position_encode = state.copy(), position.copy()        
         if shuffle:
-            np.random.shuffle(state_encode)
-            np.random.shuffle(position_encode)
+            rng, key = jax.random.split(rng)
+            state_encode = jax_shuffle(state_encode, key)
+            position_encode = jax_shuffle(position_encode, key)
             
         state_encode_tensor = state_encode[None, :, None, :]
         position_encode_tensor = position_encode[None, :, None, :]
@@ -276,7 +310,7 @@ def eval_bleu_rouge(model, who, trajs_input, id2node, node2ids, max_gen_len=None
             pos_tensor = curr_position[None, :, None, :]
         
             QArray = model.inference_rollout_QValue(state_encode_tensor, position_encode_tensor, state_tensor, pos_tensor)
-            QArray = QArray.squeeze(axis=(0, 2))
+            QArray = QArray.squeeze(axis=0)
             QNodeArray = np.zeros((len(QArray), len(node2ids)))
             for node, ids in node2ids.items():
                 QNodeArray[:, node] = np.mean(QArray[:, ids], axis=1)
@@ -284,7 +318,7 @@ def eval_bleu_rouge(model, who, trajs_input, id2node, node2ids, max_gen_len=None
             node_probs = softmax(QNodeArray, axis=1)
             final_decided_node = node_probs[-1, :].argmax()
             
-            if final_decided_node == node_probs.shape[1]:
+            if final_decided_node + 1 == node_probs.shape[1]:
                 # 终止轨迹生成
                 gen_node_seq.append(-1)
                 break
@@ -295,7 +329,8 @@ def eval_bleu_rouge(model, who, trajs_input, id2node, node2ids, max_gen_len=None
             if t < time_span - 1:
                 # 更新curr_state/curr_pos（这里用模型预测）
                 # 先求出最有可能的动作
-                QSelection = QArray[-1, :][node2ids[final_decided_node]].max()
+                selected_node_ids = jnp.array(node2ids[final_decided_node])
+                QSelection = QArray[-1, selected_node_ids].max()
                 QSelection_idx = np.where(QArray[-1, :] == QSelection)[0][0]
                 
                 # turn action to traj and then append to curr_state/curr_pos
@@ -339,7 +374,7 @@ def eval_edit_distance(model, who, trajs_input, id2node, node2ids, max_gen_len=N
     n_traj = 0
     edit_dist = []
     time_spans = []
-    
+    rng = jax.random.PRNGKey(42)
     for traj_one_day in trajs_input:
         state, action, position = traj_one_day
         time_span = len(state)
@@ -351,8 +386,9 @@ def eval_edit_distance(model, who, trajs_input, id2node, node2ids, max_gen_len=N
 
         state_encode, position_encode = state.copy(), position.copy()        
         if shuffle:
-            np.random.shuffle(state_encode)
-            np.random.shuffle(position_encode)
+            rng, key = jax.random.split(rng)
+            state_encode = jax_shuffle(state_encode, key)
+            position_encode = jax_shuffle(position_encode, key)
             
         state_encode_tensor = state_encode[None, :, None, :]
         position_encode_tensor = position_encode[None, :, None, :]
@@ -370,7 +406,7 @@ def eval_edit_distance(model, who, trajs_input, id2node, node2ids, max_gen_len=N
             pos_tensor = curr_position[None, :, None, :]
         
             QArray = model.inference_rollout_QValue(state_encode_tensor, position_encode_tensor, state_tensor, pos_tensor)
-            QArray = QArray.squeeze(axis=(0, 2))
+            QArray = QArray.squeeze(axis=0)
             QNodeArray = np.zeros((len(QArray), len(node2ids)))
             for node, ids in node2ids.items():
                 QNodeArray[:, node] = np.mean(QArray[:, ids], axis=1)
@@ -378,7 +414,7 @@ def eval_edit_distance(model, who, trajs_input, id2node, node2ids, max_gen_len=N
             node_probs = softmax(QNodeArray, axis=1)
             final_decided_node = node_probs[-1, :].argmax()
             
-            if final_decided_node == node_probs.shape[1]:
+            if final_decided_node + 1 == node_probs.shape[1]:
                 # 终止轨迹生成
                 gen_node_seq.append(-1)
                 break
@@ -389,7 +425,8 @@ def eval_edit_distance(model, who, trajs_input, id2node, node2ids, max_gen_len=N
             if t < time_span - 1:
                 # 更新curr_state/curr_pos（这里用模型预测）
                 # 先求出最有可能的动作
-                QSelection = QArray[-1, :][node2ids[final_decided_node]].max()
+                selected_node_ids = jnp.array(node2ids[final_decided_node])
+                QSelection = QArray[-1, selected_node_ids].max()
                 QSelection_idx = np.where(QArray[-1, :] == QSelection)[0][0]
                 
                 # turn action to traj and then append to curr_state/curr_pos
@@ -417,15 +454,13 @@ def eval_edit_distance(model, who, trajs_input, id2node, node2ids, max_gen_len=N
 # ========== 主入口 ==========
 def main():
     user_list = [int(name) for name in os.listdir(MODEL_DIR) if name.isdigit()]
-    all_results = []
+    all_results = dict()
     for who in user_list:
         res = evaluate_user(who)
-        all_results.extend(res)
+        all_results[who] = res
     # 保存结果
     df = pd.DataFrame(all_results)
     df.to_csv('./Analysis/performance_eval_results.csv', index=False)
-    with open('./product/performance_eval_results.pkl', 'wb') as f:
-        pickle.dump(all_results, f)
     print('Evaluation finished.')
 
 if __name__ == '__main__':

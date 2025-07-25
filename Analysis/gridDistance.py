@@ -1,4 +1,5 @@
 import os
+from collections import Counter
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -182,45 +183,121 @@ def encoder_inpect(inputs, positions, num_layers, num_heads, num_scale, dff, rat
     return final_output, block_output
 
 
-def calculate_relative_encoding_distance(coords, num_layers=2, num_heads=1, num_scale=4, dff=2, rate=0.1, encoder_o_dim=2):    
+def calculate_relative_encoding_distance(coords, who, num_layers=2, num_heads=1, num_scale=4, dff=2, rate=0.1, encoder_o_dim=2):    
     # 初始化模型
-    model_param_path = './model/traj_Q4/traj_Q4_model.pickle'
-    print("计算相对位置编码距离...")
-    
-    state_dim = 10
-    key = jax.random.PRNGKey(41310)
-    # 准备坐标输入
-    positions = np.array(coords)[None, :, None, :]  # [1, N, 1, 2]
-    inputs = 0.5 * np.ones((1, len(coords), 1, state_dim))  # 创建全1输入向量
-    
-    with open(model_param_path, 'rb') as f:    
-        params = pickle.load(f) 
-        e_params, _, _ = params
+    model_dir = f'./model/model_training_weekend_with_prior/'
+    who_fold = SIRLU.toWhoString(who)
+    final_model_path = os.path.join(model_dir, who_fold, 'evolution_model')
+    model_name = sorted(os.listdir(final_model_path))[-1]
+    model_param_path = os.path.join(final_model_path, model_name)
 
-    encoder_inspect_compile = hk.transform(encoder_inpect)
-    # apply the encoder_inspect_compile to the inputs
-    encoder_inspect_output, representation = encoder_inspect_compile.apply(
-        e_params, 
-        key,
-        inputs, 
-        positions,
-        num_layers,
-        num_heads,
-        num_scale,
-        dff,
-        rate,
-        encoder_o_dim,
-        key)
-    # 将修改后的函数转换为Haiku变换
+    # data_dir = UserDataPart + '{:09d}/'.format(who)
+    # iter_start_date = SIRLU.load_traveler(who).iter_start_date
+    # inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
+    # model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True, coords_proj=mapping_dict)
     
-    features = np.squeeze(encoder_inspect_output)
-    # 计算编码之间的欧氏距离
-    distances = squareform(pdist(features, metric='euclidean'))
-    # calculate the inner product of the encoding vector
-    # inner_product = np.matmul(features, features.T)
+    e_params, q_params = SIRLU.load_pickle_binary(model_param_path)
+    expand_dim_linear_params = e_params['linear']
+    query_params = e_params['transformer_layer/~/multi_head_self_grid_attention/~/linear']
+    key_params = e_params['transformer_layer/~/multi_head_self_grid_attention/~/linear_1']
+
+    state_attrs = SIRLU.load_state_attrs(who=who)
+    traj_list = SIRLU.loadTravelChainAll(who)
+    fnid_visits = []
+    for tc in traj_list:
+        fnid_visits.extend(tc.fnid_chain)
+    counter = Counter(fnid_visits)
+    counter_dict = dict(counter)
+    count_series = pd.Series(counter_dict, name='frequency')
+    state_attrs.set_index('fnid', inplace=True)
+    state_attrs_with_fre = pd.merge(state_attrs, count_series, how='left', left_index=True, right_index=True)
+    # 选择除了frequency的列
+    select_columns = [c for c in state_attrs_with_fre.columns if c != 'frequency']
+    state_attrs_array = state_attrs_with_fre.loc[:, select_columns].to_numpy()
+    state_attrs_freq = state_attrs_with_fre['frequency'].to_numpy()
+    # calculate the weighted average of the state_attrs_array
+    state_attrs_average = np.average(state_attrs_array, weights=state_attrs_freq, axis=0)
+    input_array = jnp.expand_dims(state_attrs_average, axis=0)
     
-    return features, distances, representation
+    embeddings = jnp.dot(input_array, expand_dim_linear_params['w']) + expand_dim_linear_params['b']
+    embedding_array = jnp.repeat(embeddings, len(coords), axis=0)
+    embedding_dim = embedding_array.shape[1]
+    
+    queries = jnp.dot(embedding_array, query_params['w']) + query_params['b']
+    keys = jnp.dot(embedding_array, key_params['w']) + key_params['b']
+    # keys = queries.copy()
+    keys = keys[None, None, :, :]; queries = queries[None, None, :, :]
+    coords = coords[None, :, :]
+    
+    def grid_pe_forward(coords, queries, keys, num_heads, embedding_dim, rng):
+        grid_pe = GridCellPositionalEncoding(
+            dimension=2,
+            qk_dim=embedding_dim,
+            num_heads=num_heads
+        )
+        return grid_pe(coords, queries, keys, rng)
+    
+    rng = jax.random.PRNGKey(41310)
+    attn_rng, ffn_rng = jax.random.split(rng)
+    grid_pe_forward_compile = hk.transform(grid_pe_forward)
+    params = grid_pe_forward_compile.init(attn_rng, coords, queries, keys, num_heads, embedding_dim, attn_rng)
+    query_rot, key_rot = grid_pe_forward_compile.apply(params, attn_rng, coords, queries, keys, num_heads, embedding_dim, attn_rng)    # 应用网格细胞位置编码
+    matmul_qk = jnp.matmul(query_rot, jnp.swapaxes(key_rot, -1, -2))
+    scaled_attention = matmul_qk / np.sqrt(embedding_dim)
+    
+    attention = np.squeeze(jax.device_get(scaled_attention))
+    return attention
 
 
-if __name__ == "__main__":    
-    pass
+    
+    # print("计算相对位置编码距离...")
+    
+    # state_dim = 10
+    # key = jax.random.PRNGKey(41310)
+    # # 准备坐标输入
+    # positions = np.array(coords)[None, :, None, :]  # [1, N, 1, 2]
+    # inputs = 0.5 * np.ones((1, len(coords), 1, state_dim))  # 创建全1输入向量
+    
+    # with open(model_param_path, 'rb') as f:    
+    #     params = pickle.load(f) 
+    #     e_params, _, _ = params
+
+    # encoder_inspect_compile = hk.transform(encoder_inpect)
+    # # apply the encoder_inspect_compile to the inputs
+    # encoder_inspect_output, representation = encoder_inspect_compile.apply(
+    #     e_params, 
+    #     key,
+    #     inputs, 
+    #     positions,
+    #     num_layers,
+    #     num_heads,
+    #     num_scale,
+    #     dff,
+    #     rate,
+    #     encoder_o_dim,
+    #     key)
+    # # 将修改后的函数转换为Haiku变换
+    
+    # features = np.squeeze(encoder_inspect_output)
+    # # 计算编码之间的欧氏距离
+    # distances = squareform(pdist(features, metric='euclidean'))
+    # # calculate the inner product of the encoding vector
+    # # inner_product = np.matmul(features, features.T)
+    
+    # return features, distances, representation
+
+
+if __name__ == "__main__":
+    who = 1102234
+    
+    import geopandas as gpd
+    path = './data/city_grid_features/city_grid_features.geojson'
+    city_grid_with_LU = gpd.read_file(path)
+    city_grid_location = city_grid_with_LU.geometry.centroid
+    # convert the coordinates to UTM projection
+    city_grid_location = city_grid_location.to_crs(epsg=32650)
+    city_grid_location_array = np.array([(p.x, p.y) for p in city_grid_location])
+    coords = city_grid_location_array[np.random.choice(len(city_grid_location_array), 8), :]
+    
+    
+    calculate_relative_encoding_distance(coords, who, num_layers=2, num_heads=1, num_scale=4, dff=2, rate=0.1, encoder_o_dim=2)
