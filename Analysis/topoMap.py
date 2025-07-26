@@ -542,8 +542,10 @@ def clusterLocationsSimple(who, use_social=True, clusterer='knee'):
     # get the number of clusters
     num_clusters = len(np.unique(cluster_labels))
     print("There are {} clusters in total.".format(num_clusters))
+    cluster_label_unique = np.sort(np.unique(cluster_labels[cluster_labels != -1]))
     
-    return cluster_labels
+    cluster_label_mapped = np.where(cluster_labels == -1, -1, np.searchsorted(cluster_label_unique, cluster_labels, side='left'))
+    return cluster_label_mapped
 
 def cogTopoGraph(who, date):
     transitionProbsEdit, id_coorders_mapping_edit, stationary, cluster_labels = clusterLocations(who, date)

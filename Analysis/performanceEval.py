@@ -454,13 +454,14 @@ def eval_edit_distance(model, who, trajs_input, id2node, node2ids, max_gen_len=N
 # ========== 主入口 ==========
 def main():
     user_list = [int(name) for name in os.listdir(MODEL_DIR) if name.isdigit()]
+    # user_list = [58272403]
     all_results = dict()
     for who in user_list:
         res = evaluate_user(who)
         all_results[who] = res
     # 保存结果
-    df = pd.DataFrame(all_results)
-    df.to_csv('./Analysis/performance_eval_results.csv', index=False)
+    with open('./product/performance_eval_results.pkl', 'wb') as f:
+        pickle.dump(all_results, f)
     print('Evaluation finished.')
 
 if __name__ == '__main__':
