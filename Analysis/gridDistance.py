@@ -190,11 +190,6 @@ def calculate_relative_encoding_distance(coords, who, num_layers=2, num_heads=1,
     final_model_path = os.path.join(model_dir, who_fold, 'evolution_model')
     model_name = sorted(os.listdir(final_model_path))[-1]
     model_param_path = os.path.join(final_model_path, model_name)
-
-    # data_dir = UserDataPart + '{:09d}/'.format(who)
-    # iter_start_date = SIRLU.load_traveler(who).iter_start_date
-    # inputs, targets_action, positions, action_dim, state_dim = SIRLU.loadTrajChain(data_dir, type='before', start_date=iter_start_date)
-    # model = SIRLT.avril(inputs, targets_action, positions, state_dim, action_dim, state_only=True, coords_proj=mapping_dict)
     
     e_params, q_params = SIRLU.load_pickle_binary(model_param_path)
     expand_dim_linear_params = e_params['linear']

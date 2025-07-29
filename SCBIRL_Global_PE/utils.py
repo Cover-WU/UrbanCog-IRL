@@ -448,7 +448,7 @@ def visited_date(who: int):
     traveler = load_traveler(who)
     return traveler.visit_date
 
-def extract_week_ends(date_seq: List[int]):
+def extract_week_ends(date_seq: List[int], date_start = None):
     '''
     given a list of dates, return the week end dates and week code.
     '''
@@ -460,8 +460,10 @@ def extract_week_ends(date_seq: List[int]):
         h = eight_digits_str
         date_str = f"{h[:4]}-{h[4:6]}-{h[6:]}"
         return date.fromisoformat(date_str)
-        
-    startdate = fromisoformat(str(date_seq[0]))
+    
+    if date_start is None:
+        date_start = date_seq[0]
+    startdate = fromisoformat(str(date_start))
     date_objects = [fromisoformat(str(d)) for d in date_seq]
     # Date origin: the Monday of the week containing the starting date
     origin_date = startdate - timedelta(startdate.weekday())
