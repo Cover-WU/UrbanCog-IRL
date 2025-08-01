@@ -482,8 +482,14 @@ def calculateQValueChange(who, id2node, pattern, model_dir):
                 seq_base = node_seqs[i]
                 seq_comp = node_seqs[j]
                 first_index = np.where(np.array(seq_base) != np.array(seq_comp))[0][0]
+                # 获取first_index之后的子序列
+                seq_comp_after = list(seq_comp[first_index:])
                 for k in range(first_index, timespan):
-                    p1, p2 = PiNodeValues[i, k, :], PiNodeValues[j, k, :]
+                    k_th_node = seq_base[k]
+                    temp_idx = seq_comp_after.index(k_th_node)
+                    k_mirror = first_index + temp_idx
+                    seq_comp_after[temp_idx] = -1
+                    p1, p2 = PiNodeValues[i, k, :], PiNodeValues[j, k_mirror, :]
                     js_policy_total.append(js_distance_discrete(p1, p2)) 
                     distribute_total.append((p1, p2))
     return js_policy_total, distribute_total
